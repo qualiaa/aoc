@@ -6,7 +6,7 @@ readInt s = read s
 findRepeat l = findRepeat' l []
 
     where findRepeat' :: (Eq a) => [a] -> [a] -> a
-          findRepeat' (x:xs) [] = if x `elem` ys then x else findRepeat' (x : ys) xs
+          findRepeat' (x:xs) ys = if x `elem` ys then x else findRepeat' xs (x : ys) 
 
 main = do
     dfs <- cycle . map readInt . lines <$> getContents
