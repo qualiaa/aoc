@@ -1,4 +1,3 @@
-import Data.Functor((<&>))
 import Data.Ix (range)
 import Data.List (break, group, maximumBy, sort)
 import Data.Time.LocalTime (LocalTime(..), TimeOfDay(todMin))
@@ -28,7 +27,7 @@ toSleepRecords ((_,(Guard guard')):rest) =
           toMinuteRanges :: [DatedEvent'] -> [MinuteRange]
           toMinuteRanges events = dropEveryOther staggeredPair
               where minutes = map (todMin . localTimeOfDay . fst) events
-                    staggeredPair = zip minutes (tail minutes <&> minus 1)
+                    staggeredPair = zip minutes (pred <$> tail minutes)
 
 toSleepRecords _ = error "Does not start with a guard"
 
@@ -64,7 +63,7 @@ main = do
 
 -- utilities
 numMinutes :: MinuteRange -> Int
-numMinutes = uncurry minus
+numMinutes = uncurry $ flip (-)
 
 sumMinuteRanges :: [MinuteRange] -> Int
 sumMinuteRanges = sum . map numMinutes
@@ -72,8 +71,6 @@ sumMinuteRanges = sum . map numMinutes
 dropEveryOther [] = []
 dropEveryOther [x] = [x]
 dropEveryOther (x:_:xs) = x:dropEveryOther xs
-
-minus = flip (-)
 
 -- oh how I wish for the day I learn arrows/lens
 onSecond f = \(_,a) (_,b) -> f a b
