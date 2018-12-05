@@ -9,14 +9,14 @@ combine = lambda a,b: abs(a-b) == 32
 def singleStep(p):
     ix = iter(range(0, len(p)-1))
     result = []
-    for i in ix:
-        if combine(p[i], p[i+1]):
-            try: next(ix)
-            except: pass
-        else:
-            result.append(p[i])
-    if not combine(p[-2],p[-1]):
+    try: 
+        for i in ix:
+            if combine(p[i], p[i+1]):
+                next(ix)
+            else:
+                result.append(p[i])
         result.append(p[-1])
+    except: pass
     return result
 
 def completeReaction(p):
