@@ -16,7 +16,7 @@ function v () {
 for lineA in $lines; do
     for lineB in $(after $lineA); do
         diff -U 100 <(v $lineA) <(v $lineB) | tail -n+4 | tr -d '\n ' |\
-            sed '/-.*-/d;s/[+-].//g'
+            sed '/-.*-/d;s/[+-].//g;s/$/\n/'
     done
 done
 
@@ -34,7 +34,6 @@ done
 for lineA in $lines; do
     for lineB in $(after $lineA); do
         paste <(v $lineA) <(v $lineB) |\
-           sed -E '::;s/(.)\t\1$/\1/;s/.\t.$/#/;/#.*#/Q;N;s/\n//;b:' |\
-           grep -v '#.*#' | tr -d '#'
+           sed -E '::;s/(.)\t\1$/\1/;s/.\t.$/#/;/#.*#/Q;N;s/\n//;b:' | tr -d '#'
     done
 done

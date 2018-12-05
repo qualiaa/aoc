@@ -1,6 +1,6 @@
 import Data.Functor((<&>))
 import Data.Ix (range)
-import Data.List (break, group, maximumBy, sort, sortBy)
+import Data.List (break, group, maximumBy, sort)
 import Data.Time.LocalTime (LocalTime(..), TimeOfDay(todMin))
 
 import qualified Data.Map.Strict as M
@@ -35,14 +35,14 @@ toSleepRecords _ = error "Does not start with a guard"
 findSleepiestGuard :: GuardSleepRecord -> GuardID
 findSleepiestGuard = fst . maximumBy (onSecond compare) . M.toList . M.map sumMinuteRanges
 
-findSleepiestMinute :: [MinuteRange] -> (Int, Int)
-findSleepiestMinute l = (minute, numOccurrences) 
+findCosiestMinute :: [MinuteRange] -> (Int, Int)
+findCosiestMinute l = (minute, numOccurrences)
     where numOccurrences = length largestList
           minute         = head largestList
           largestList = maximumBy length' . group . sort . concat $ map range l
           length' a b = compare (length a) (length b)
 
-main = do 
+main = do
     events <- sortByFirst . map (getDatedEvent . read) . lines <$> getContents
 
     let sleepRecords = toSleepRecords events
@@ -50,24 +50,24 @@ main = do
     -- part A
     let sleepiestGuard = findSleepiestGuard sleepRecords
         theirSleepRecord = sleepRecords M.! sleepiestGuard
-        sleepiestMinute = fst $ findSleepiestMinute theirSleepRecord
+        cosiestMinute = fst $ findCosiestMinute theirSleepRecord
 
-    print $ sleepiestGuard * sleepiestMinute
+    print $ sleepiestGuard * cosiestMinute
 
     -- part B
-    let sleepiestMinutes = M.map findSleepiestMinute sleepRecords
-        (reliableGuard, mostCommonMinute) = fmap fst
-            . maximumBy (\(_,(_,n)) (_,(_,m)) -> compare n m) 
-            $ M.toList sleepiestMinutes
+    let cosiestMinutes = M.map findCosiestMinute sleepRecords
+        (reliableGuard, theirFavouriteMinute) = fmap fst
+            . maximumBy (\(_,(_,n)) (_,(_,m)) -> compare n m)
+            $ M.toList cosiestMinutes
 
-    print $ reliableGuard * mostCommonMinute
+    print $ reliableGuard * theirFavouriteMinute
 
 -- utilities
 numMinutes :: MinuteRange -> Int
 numMinutes = uncurry minus
 
 sumMinuteRanges :: [MinuteRange] -> Int
-sumMinuteRanges = sum . map numMinutes 
+sumMinuteRanges = sum . map numMinutes
 
 dropEveryOther [] = []
 dropEveryOther [x] = [x]
@@ -76,7 +76,5 @@ dropEveryOther (x:_:xs) = x:dropEveryOther xs
 minus = flip (-)
 
 -- oh how I wish for the day I learn arrows/lens
-onFirst  f = \(a,_) (b,_) -> f a b
 onSecond f = \(_,a) (_,b) -> f a b
-sortByFirst :: (Ord a) => [(a,b)] -> [(a,b)]
-sortByFirst = sortBy $ onFirst compare
+sortByFirst = M.toAscList . M.fromList

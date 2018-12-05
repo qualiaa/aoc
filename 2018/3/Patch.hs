@@ -14,7 +14,7 @@ newtype Patch = Patch {getPatch :: (Int, Rect)} deriving (Show, Eq)
 instance Read (Rect)  where readsPrec _ = readP_to_S readRect
 instance Read (Patch) where readsPrec _ = readP_to_S readPatch
 
-digit = (satisfy isDigit)
+digit = satisfy isDigit
 delim p c = skipSpaces >> (manyTill p $ char c)
 intDelim :: (Integral a, Read a) => Char -> ReadP a
 intDelim c = read <$> delim digit c
@@ -28,5 +28,5 @@ readRect = do
 readPatch :: ReadP Patch
 readPatch = do
     id <- char '#' >> (intDelim ' ')
-    mapM_ char "@ "
+    string "@ "
     liftM (Patch . ((,) id)) readRect
