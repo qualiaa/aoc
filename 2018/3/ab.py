@@ -10,8 +10,8 @@ class Rect:
         if not mo: raise RuntimeError
         self.__dict__ = {k:int(v) for k,v in mo.groupdict().items()}
 
-    def slices(canvas):
-        return (slice(r.x, r.x + r.w), slice(r.y, r.y + r.h))
+    def slices(s):
+        return (slice(s.x, s.x + s.w), slice(s.y, s.y + s.h))
         
 rects = list(map(Rect,sys.stdin.readlines()))
 
