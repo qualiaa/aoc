@@ -7,12 +7,8 @@ import Data.Maybe (maybeToList)
 calcDistances coordinates x y = map distanceFunc coordinates
     where distanceFunc = \(a,b) -> abs (x - a) + abs (y - b)
 
-calcDistanceTensor coordinates w h = do
-    y <- [0..h-1]
-    x <- [0..w-1]
-    return $ calcDistances coordinates x y
-
-distanceMap distanceTensor = map sum distanceTensor
+calcDistanceTensor coordinates w h =
+    [calcDistances coordinates x y | y <- [0..h-1], x <- [0..w-1]]
 
 voronoi distanceTensor = do
     distances <- distanceTensor
@@ -53,12 +49,7 @@ main = do
         maxArea = maximum . M.elems $ foldr M.delete areas edgeElements
         
     print maxArea
-    print . length . filter (<10000) $ distanceMap distanceTensor
-    {-
-    forM_ [0..(h-1)] (\j -> do
-        print . take w $ drop (j * w) distances)
-    -}
-
+    print . length . filter (<10000) $ map sum distanceTensor
 
 -- utils
 dropEveryOther [] = []
