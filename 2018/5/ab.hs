@@ -1,23 +1,14 @@
-import Data.Char(isUpper,isLower,toLower)
-import Data.List(delete)
+import Data.Char
 
-singlePass "" = ""
-singlePass [c] = [c]
-singlePass (a:b:cs) = if match a b then singlePass cs else a:singlePass (b:cs)
-    where match a b = a `aA` b || b `aA` a
-          aA a b = isLower a && isUpper b && a == toLower b
-
-reduce s
-    | s' == s = s
-    | otherwise = reduce s'
-    where s' = singlePass s
-
-sift :: String -> [String]
-sift s = do
-    element <- zipWith (\a b -> a:b:[]) ['a'..'z'] ['A'..'Z']
-    return $ filter (`notElem` element) s
+addToPolymer [] u = [u]
+addToPolymer (u0:p) u1
+    | abs (u0-u1) == 32 = p
+    | otherwise = u1:u0:p
+newPolymer = foldl addToPolymer []
 
 main = do
-    input <- delete '\n' <$> getContents
-    print . length $ reduce input
-    print . minimum . map (length . reduce) $ sift input
+    input <- map ord . filter (/='\n') <$> getContents
+    
+    print . length $ newPolymer input
+    let siftedInputs = map (\i -> filter (`notElem` [i,i+32]) $ input) [ord 'A'..ord 'Z']
+    print . minimum $ length . newPolymer <$> siftedInputs
