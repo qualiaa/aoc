@@ -25,7 +25,6 @@ readNode = do
     liftM2 Node (count n readNode) (readMetaData m)
     
 sumTree :: Tree -> Int
-sumTree (Node [] xs) = sum xs
 sumTree (Node ns xs) = foldl (\a n -> a + sumTree n) 0 ns + (sum xs)
 
 ix :: [a] -> Int -> Maybe a
