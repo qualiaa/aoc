@@ -1,4 +1,3 @@
-import Control.Monad (forM_)
 import qualified Data.Map as M
 import Data.List (elemIndex, nub)
 import Data.Functor ((<&>))
@@ -35,7 +34,7 @@ normalise coordinates = (coordinates', w, h)
           coordinates' = zip (xs <&> (`minus` l)) (ys <&> (`minus` t))
 
 main = do
-    ordinates <- (map read) . words . filter (/=',') <$> getContents :: IO [Int]
+    ordinates <- map read . words . filter (/=',') <$> getContents :: IO [Int]
     
     let coordinates' = dropEveryOther . zip ordinates $ tail ordinates
         (coordinates, w, h) = normalise coordinates'
