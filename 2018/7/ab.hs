@@ -25,19 +25,15 @@ assignTasks = do
     liftM (snd . foldl' assignWorker (todo,[])) workers >>= setWorkers
           
 
-finishWorkers :: TaskState ()
-finishWorkers = do
-    time <- currentTime
+finishAssignedTask :: TaskState ()
+finishAssignedTask = do
+    time <- minimum . map snd . catMaybes <$> workers
     let finishWorker :: Worker -> TaskState Worker
         finishWorker Nothing = return Nothing
         finishWorker w@(Just (task, t)) =
             if time /= t then return w else finishTask task >> return Nothing
     setWorkers =<< (join $ sequence . map finishWorker <$> workers)
-                
-finishAssignedTask :: TaskState ()
-finishAssignedTask = do
-    minimum . map snd . catMaybes <$> workers >>= setTime
-    finishWorkers
+    setTime time
     
 
 minDuration = 60
