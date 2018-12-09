@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-from collections import deque, defaultdict
+from collections import deque
 import sys
 
 
