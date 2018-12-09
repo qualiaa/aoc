@@ -15,26 +15,30 @@ performTasksAlone = do
 
 assignTasks :: TaskState ()
 assignTasks = do
-    todo <- readyTasks
     time <- currentTime
-    let assignWorker ([],ws) w          = ([], w:ws)
-        assignWorker (ts,ws) w@(Just _) = (ts, w:ws)
-        assignWorker (t:ts,ws) Nothing  = 
-            let w = Just (t, (time + duration t)) in (ts, w:ws)
 
-    liftM (snd . foldl' assignWorker (todo,[])) workers >>= setWorkers
+    let assignWorker :: Worker -> TaskState Worker
+        assignWorker w@(Just _) = return w
+        assignWorker Nothing = do
+            todo <- readyTasks
+            case todo of []    -> return Nothing
+                         (t:_) -> return $ Just (t, (time + duration t))
+
+    setWorkers =<< (join $ sequence . map assignWorker <$> workers)
           
 
 finishAssignedTask :: TaskState ()
 finishAssignedTask = do
     time <- minimum . map snd . catMaybes <$> workers
+    setTime time
+
     let finishWorker :: Worker -> TaskState Worker
         finishWorker Nothing = return Nothing
         finishWorker w@(Just (task, t)) =
-            if time /= t then return w else finishTask task >> return Nothing
+            if time == t then finishTask task >> return Nothing
+                         else return w
+
     setWorkers =<< (join $ sequence . map finishWorker <$> workers)
-    setTime time
-    
 
 minDuration = 60
 duration :: Task -> Time
