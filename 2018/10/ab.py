@@ -19,7 +19,7 @@ def mean_min_distance(r):
 # skip a load of steps with very rough optimisation
 time = 0
 md = mean_min_distance(r)
-fiddle_factor = 4
+fiddle_factor = 16
 target_min_distance = 1
 
 while md > target_min_distance:
