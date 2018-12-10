@@ -10,22 +10,26 @@ xyvw = np.array([tuple(map(int,digit_group)) for digit_group in filtered_digits]
 r = xyvw[:,1::-1]
 v = xyvw[:,-1:1:-1]
 
-def mean_distance(r):
+def mean_min_distance(r):
     d = 0
     for i,coord in enumerate(r[:-1]):
-        d += np.abs(np.delete(r, range(i+1),0) - coord).sum()
-    return d * 2 / (r.shape[0]*(r.shape[0]-1))
+        d += np.abs(np.delete(r, range(i+1),0) - coord).min()
+    return d / r.shape[0]
 
 # skip a load of steps with very rough optimisation
 time = 0
-md = mean_distance(r)
-while md > 100:
-    r += v * int(md//50)
-    md2 = mean_distance(r)
+md = mean_min_distance(r)
+fiddle_factor = 4
+target_min_distance = 1
+
+while md > target_min_distance:
+    dt = int(md) * fiddle_factor
+    r += v * dt
+    md2 = mean_min_distance(r)
     if md2 > md:
-        r -= v*int(md//50)
+        r -= v * dt
         break
-    time += int(md//50)
+    time += dt
     md = md2
 
 
@@ -37,7 +41,7 @@ lastmd = md
 mds = np.array([])
 while len(mds) < 2 or (mds[-5:-1] > lastmd).any():
     mds = np.append(mds, [lastmd])
-    lastmd = mean_distance(r + v * len(mds))
+    lastmd = mean_min_distance(r + v * len(mds))
 
 # print the arrangement of points when the distance is minimised
 closest_arrangement = r + v * np.argmin(mds)
