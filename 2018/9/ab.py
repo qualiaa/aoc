@@ -5,16 +5,17 @@ import sys
 
 
 def run_game(numPlayers, numMarbles):
-    state = deque([0,1])
+    state = deque([0])
     score = [0] * numPlayers
 
-    for i in range(2, numMarbles+1):
+    for i in range(1,numMarbles+1):
         if i % 23: 
-            state.rotate(2)
+            state.rotate(-1)
             state.append(i)
         else:
-            state.rotate(-7)
+            state.rotate(7)
             score[(i-1) % numPlayers] += i + state.pop()
+            state.rotate(-1)
     return max(score)
 
 

@@ -1,17 +1,18 @@
 import Control.Monad (forM_)
+import Data.Maybe (fromMaybe)
+--import Data.Foldable (toList)
 import qualified Deque as D
 import qualified Data.Map.Strict as M
 
-nextMarble turn = D.cons turn . rotl 2
-removeMarble state = let state' = rotr 7 state in (D.tail state', dhead state')
+nextMarble turn = D.snoc turn . rotl 1
+removeMarble state = let state' = rotr 7 state in (rotl 1 $ D.init state', dlast state')
 
 scoringTurn t = t `mod` 23 == 0
 
 rotr n = (!!n) . iterate D.shiftRight
 rotl n = (!!n) . iterate D.shiftLeft
 
-dhead s = case D.head s of (Just x) -> x
-                           Nothing  -> error "head on empty deque"
+dlast = fromMaybe (error "tail on empty deque") . D.last
 
 game numPlayers numMarbles = game' (D.fromList [0]) $ M.fromList (zip [1..numPlayers] $ repeat 0)
 
@@ -20,7 +21,7 @@ game numPlayers numMarbles = game' (D.fromList [0]) $ M.fromList (zip [1..numPla
             | scoringTurn turn  = scoringUpdate
             | otherwise         = normalUpdate
 
-            where turn = dhead state + 1
+            where turn = dlast state + 1
 
                   normalUpdate  = let state' = nextMarble turn state
                                   in  game' state' scores
@@ -40,3 +41,13 @@ main = do
                         res2 = game p (m*100)
                     print . maximum .  M.elems $ snd res1
                     print . maximum .  M.elems $ snd res2)
+
+    {-
+    let nextTurn :: D.Deque Int -> D.Deque Int
+        nextTurn s
+            | null s = D.fromList [0]
+            | otherwise = let turn = dlast s + 1 in
+                        if scoringTurn turn then nextMarble (turn+1) . fst $ removeMarble s
+                                            else nextMarble turn s
+    mapM_ (print . toList) (take 28 . iterate nextTurn $ D.fromList [])
+    -}
