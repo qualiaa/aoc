@@ -22,6 +22,8 @@ maxV = -sys.maxsize
 maxCoords = None
 for i in range(1,301):
     v, coords = get_conv(i)
-    if v > maxV: maxCoords = coords
+    if v > maxV:
+        maxV = v
+        maxCoords = coords
 
 print(maxCoords)
