@@ -48,8 +48,6 @@ iterate | tail +20 | head -1 | score_flowers
 stable_states=($(iterate | find_stable_states))
 
 iteration=${stable_states[0]}
-s1=${stable_states[1]}
-s2=${stable_states[2]}
 
 score1=$(score_flowers<<<${stable_states[1]})
 score2=$(score_flowers<<<${stable_states[2]})
