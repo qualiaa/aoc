@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 import sys
-from itertools import groupby, chain
+from itertools import groupby
 from operator import attrgetter, methodcaller
 from functools import partial
 
@@ -16,7 +16,6 @@ class Positionable:
         if s.y == o.y:
             return s.x < o.x
         return s.y < o.y
-
 
 class Unit(Positionable):
     ELF=0
@@ -40,8 +39,7 @@ class Unit(Positionable):
             target_coords = [(t.x, t.y)
                     for ts in [u.get_surrounding_tiles() for u in targets]
                     for t in ts if t.empty()]
-            #print(target_coords)
-            path = s.map.find_path((s.x,s.y), target_coords)
+            path = Path.find(s.map, (s.x,s.y), target_coords)
             if path:
                 s.map[s.y][s.x].remove(s)
                 next_tile = path.first_tile()
@@ -78,7 +76,6 @@ class Unit(Positionable):
         return [u for u in s.map.units if u.type != s.type and u.alive]
 
     def die(s):
-        #print("Dead")
         s.map[s.y][s.x].remove(s)
         s.alive = False
         if part == 2 and s.type == Unit.ELF:
@@ -98,7 +95,6 @@ class Tile(Positionable):
             s.contents = None
 
     def add(s,o):
-        if s.contents: raise RuntimeError("Huh")
         s.contents = o
 
     # flood fill
@@ -143,8 +139,6 @@ class Map:
                     s.units.append(u)
                 elif c == ".":
                     v = Tile(x,y)
-                else:
-                    raise RuntimeError("Unexpected character: " + c)
                 s.map[y].append(v)
         s._link_tiles()
 
@@ -158,18 +152,12 @@ class Map:
                 s.map[y][x].left  = link(s.map[y][x-1])
                 s.map[y][x].right = link(s.map[y][x+1])
 
-    def dimensions(s):
-        return (len(s.map[0]), len(s.map))
-
     def round(s):
         for u in sorted(s.units):
             u.turn()
         s.units = [u for u in s.units if u.alive]
 
         return not s.finished_early
-
-    def remove(s,u):
-        s.units.remove(u)
 
     def _finished(s):
         finished = s.finished_early or len(list(groupby(s.units,attrgetter("type")))) < 2
@@ -178,9 +166,33 @@ class Map:
         if part == 2:
             return s.elf_death or finished
 
-    def find_path(s, start, target_coords):
+    def __str__(s):
+        l = []
+        for y in s.map:
+            l.append([])
+            for x in y:
+                if x.contents == None:
+                    l[-1].append(".")
+                elif type(x.contents) is Unit:
+                    l[-1].append("G" if x.contents.type == Unit.GOBLIN else "E")
+                elif x.contents == Tile.WALL:
+                    l[-1].append("#")
+        return "\n".join(["".join(row) for row in l])
+
+    def __getitem__(s,y):
+        return s.map[y]
+
+class Path:
+    def create(m, dmap, target_coord):
+        dist, prev_coords = dmap[target_coord]
+
+        paths = map(partial(Path,m), Path._follow(dmap, target_coord))
+        path = sorted(paths)[0]
+        return path
+
+    def find(m, start, target_coords):
         sx,sy = start
-        dmap = s.map[sy][sx].distance_map()
+        dmap = m[sy][sx].distance_map()
 
         min_dist = sys.maxsize
         min_coords = []
@@ -194,61 +206,10 @@ class Map:
                     min_coords.append(c)
 
         if min_coords:
-            #print("Selecting from", min_coords)
             target_pos = min([Positionable(*x) for x in min_coords])
-            path = Path.create(s, dmap, (target_pos.x, target_pos.y))
-            #print("From",start,"going to", min_coords,"via",path.path[0])
+            path = Path.create(m, dmap, (target_pos.x, target_pos.y))
             return path
         return None
-
-
-    def __str__(s):
-        l = []
-        for y in s.map:
-            l.append([])
-            for x in y:
-                if x.contents == None:
-                    l[-1].append(".")
-                elif type(x.contents) is Unit:
-                    l[-1].append("G" if x.contents.type == Unit.GOBLIN else "E")
-                elif x.contents == Tile.WALL:
-                    l[-1].append("#")
-        """
-        targets = sorted(s.units)[0].find_targets()
-        for u in targets:
-            l[u.y][u.x] = "@"
-        """
-        """
-        for t in [t for ts in [u.get_surrounding_tiles() for u in targets] for t in ts if t.empty()]:
-            l[t.y][t.x] = "x"
-        """
-        """
-        path = s.find_path((2,1), [(4,3),(6,3),(5,2)])
-        dists = s.map[1][2].distance_map()
-        for y,row in enumerate(l):
-            for x,c in enumerate(row): 
-                d = dists.get((x,y))
-                if d:
-                    l[y][x] = str(d[0] % 10)
-        if path:
-            for x, y in path.path:
-                l[y][x] = "x"
-        """
-        return "\n".join(["".join(row) for row in l])
-
-    def __getitem__(s,y):
-        t = type(s.map[y])
-        if t != list:
-            print (t)
-        return s.map[y]
-
-class Path:
-    def create(m, dmap, target_coord):
-        dist, prev_coords = dmap[target_coord]
-
-        paths = map(partial(Path,m), Path._follow(dmap, target_coord))
-        path = sorted(paths)[0]
-        return path
 
     def _follow(dmap, current_coord):
         dist, prev_coords = dmap[current_coord]
@@ -280,7 +241,6 @@ class Path:
             return s.first_tile() < o.first_tile()
         return len(s) < len(o)
 
-
 map_input = sys.stdin.readlines()
 m = Map(map_input)
 
@@ -288,7 +248,6 @@ num_rounds = 0
 while not m._finished():
     if m.round():
         num_rounds += 1
-    #print(m)
 
 total_hp = 0
 for u in m.units:
@@ -301,18 +260,15 @@ part = 2
 elves_die = True
 while elves_die:
     elf_attack += 1
-    print(elf_attack)
     m = Map(map_input)
     num_rounds = 0
     while not m._finished():
         if m.round():
             num_rounds += 1
-        #print(m)
     if not m.elf_death: elves_die = False
 
 total_hp = 0
 for u in m.units:
     total_hp += u.hp
 
-print(total_hp,num_rounds)
 print(total_hp*num_rounds)
