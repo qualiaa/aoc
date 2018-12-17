@@ -35,8 +35,6 @@ data Example = Ex { before :: Registers
                   , after  :: Registers
                   }
 
-digit = satisfy isDigit
-
 readReg :: ReadP Registers
 readReg = do
     skipSpaces >> (string "Before:" <|> string "After:")
@@ -44,7 +42,7 @@ readReg = do
 
 readInst :: ReadP Instruction
 readInst = do
-    [a,b,c,d] <- count 4 $ munch (==' ') >> (read <$> many1 digit)
+    [a,b,c,d] <- count 4 $ munch (==' ') >> (read <$> many1 (satisfy isDigit))
     return (a,b,c,d)
 
 readExample :: ReadP Example
@@ -85,46 +83,26 @@ instArgs :: Instruction -> Args
 instOp   (o,_,_,_) = o
 instArgs (_,a,b,c) = (a,b,c)
 
-addr = regOp (+)
-addi = imOpR (+)
-mulr = regOp (*)
-muli = imOpR (*)
-banr = regOp (.&.)
-bani = imOpR (.&.)
-borr = regOp (.|.)
-bori = imOpR (.|.)
-
-setr = regOp const
-seti = imOpL const
-
 gtBool = (\a b -> bool 0 1 (a>b))
-gtir = imOpL gtBool
-gtri = imOpR gtBool
-gtrr = regOp gtBool
-
 eqBool = (\a b -> bool 0 1 (a==b))
-eqir = imOpL eqBool
-eqri = imOpR eqBool
-eqrr = regOp eqBool
 
 runOp :: Op -> OpF
-runOp Addr = addr
-runOp Addi = addi
-runOp Mulr = mulr
-runOp Muli = muli
-runOp Banr = banr
-runOp Bani = bani
-runOp Borr = borr
-runOp Bori = bori
-runOp Setr = setr
-runOp Seti = seti
-runOp Gtir = gtir
-runOp Gtri = gtri
-runOp Gtrr = gtrr
-runOp Eqir = eqir
-runOp Eqri = eqri
-runOp Eqrr = eqrr
-
+runOp Addr = regOp (+)
+runOp Addi = imOpR (+)
+runOp Mulr = regOp (*)
+runOp Muli = imOpR (*)
+runOp Banr = regOp (.&.)
+runOp Bani = imOpR (.&.)
+runOp Borr = regOp (.|.)
+runOp Bori = imOpR (.|.)
+runOp Setr = regOp const
+runOp Seti = imOpL const
+runOp Gtir = imOpL gtBool
+runOp Gtri = imOpR gtBool
+runOp Gtrr = regOp gtBool
+runOp Eqir = imOpL eqBool
+runOp Eqri = imOpR eqBool
+runOp Eqrr = regOp eqBool
 
 ops :: [Op]
 ops = enumFrom minBound
