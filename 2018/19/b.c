@@ -5,10 +5,10 @@ int main() {
     int target = 10551355;
 
     long long sum = 0;
-    for (long long a = 1; a <= target; ++a)
+    for (int i = 1; i <= target; ++i)
     {
-        if (target % a == 0) {
-            sum += a;
+        if (target % i == 0) {
+            sum += i;
         }
     }
 
