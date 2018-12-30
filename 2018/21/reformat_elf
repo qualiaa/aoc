@@ -1,0 +1,2 @@
+#!/bin/sh
+exec sed -Ef reformat.sed  | awk '/#ip/ {print;next}{printf "%02d ", i++; print}'

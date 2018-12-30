@@ -1,0 +1,143 @@
+r3 = 0
+
+start:
+r2 = r3 | 65536
+r3 = 10736359
+
+f1:
+r1 = r2 & 255
+r3 += r1
+r3 &= 16777215 
+r3 *= 65899 
+r3 &= 16777215 
+
+if 256 > r2 
+    if r3 == r0
+        exit
+    goto start
+
+r1 = 0
+
+f2:
+r5 = r1 + 1
+r5 *= 256
+
+if r5 > r2
+    r2 = r1
+    goto f1
+
+++r1
+goto f2
+
+
+
+
+
+
+
+
+05 set $0 r3
+
+start:
+06 or r3 $65536 r2
+07 set $10736359 r3
+
+f1:
+08 and r2 $255 r1
+09 add r3 r1 r3
+10 and r3 $16777215 r3
+11 mul r3 $65899 r3
+12 and r3 $16777215 r3
+13
+14 if $256 > r2 
+    16
+    28 if r3 == r0
+        29 end
+    30 goto start
+15
+17 set $0 r1
+
+f2:
+18 add r1 $1 r5
+19 mul r5 $256 r5
+20
+21 if r5 > r2
+    23
+    26 set r1 r2
+    27 goto f1
+22 
+24 add r1 $1 r1
+25 goto f2
+
+
+
+
+
+
+
+
+
+
+
+
+
+05 set $0 r3
+06 or r3 $65536 r2
+07 set $10736359 r3
+08 and r2 $255 r1
+09 add r3 r1 r3
+10 and r3 $16777215 r3
+11 mul r3 $65899 r3
+12 and r3 $16777215 r3
+13
+14 if $256 > r2 
+    16 jmp $28
+    28 if r3 == r0
+        29 end
+    30 jmp $6
+15
+17 set $0 r1
+18 add r1 $1 r5
+19 mul r5 $256 r5
+20
+21 if r5 > r2
+    23 jmp $26
+    26 set r1 r2
+    27 jmp $8
+22 
+24 add r1 $1 r1
+25 jmp $18
+
+
+#ip 4
+00 set $123 r3
+01 and r3 $456 r3
+02 eq r3 $72 r3
+03 rel r3
+04 jmp $1
+05 set $0 r3
+06 or r3 $65536 r2
+07 set $10736359 r3
+08 and r2 $255 r1
+09 add r3 r1 r3
+10 and r3 $16777215 r3
+11 mul r3 $65899 r3
+12 and r3 $16777215 r3
+13 gt $256 r2 r1
+14 rel r1
+15 rel $1
+16 jmp $28
+17 set $0 r1
+18 add r1 $1 r5
+19 mul r5 $256 r5
+20 gt r5 r2 r5
+21 rel r5
+22 rel $1
+23 jmp $26
+24 add r1 $1 r1
+25 jmp $18
+26 set r1 r2
+27 jmp $8
+28 eq r3 r0 r1
+29 rel r1
+30 jmp $6
