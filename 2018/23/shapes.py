@@ -14,8 +14,8 @@ class AABB:
         s.shape = (*vect(sub,max_vert, min_vert),)
 
     def draw(s, surface, colour=Color(50,50,50), fill=False):
-        shape = vect(add, s.shape, repeat(1))
-        r = Rect(*s.min_vert, *shape)
+        shape = vect(add, s.shape[:2], repeat(1))
+        r = Rect(*s.min_vert[:2], *shape)
         draw.rect(surface, colour, r, not fill)
 
     def move(s, disp):
@@ -39,7 +39,7 @@ class Sphere:
         s.r = r
 
     def draw(s, surface, colour=Color(50,50,50), fill=False):
-        p = np.array(s.centre)
+        p = np.array(s.centre[:2])
         draw.polygon(surface, colour,
                 [p+(0,-s.r), p+(s.r,0), p+(0,s.r), p+(-s.r,0)], not fill)
 
