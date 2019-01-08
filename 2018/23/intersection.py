@@ -1,4 +1,4 @@
-from operator import sub
+from operator import gt, sub
 
 from shapes import AABB, Sphere
 from utils import clamp, vect
