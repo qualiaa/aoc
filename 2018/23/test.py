@@ -3,97 +3,11 @@
 import time
 import pygame
 import sys
-from abc import ABC
-from functools import partial as p
-from itertools import repeat, starmap
-from operator import add, sub, gt
+from functools import partial as pf
 
-import numpy as np
-
-from PartitionTree import AABB, partition_tree
-
-def vect(f,*args):
-    return starmap(f, zip(*args))
-
-class Sphere:
-    def __init__(s, centre, r):
-        s.centre = centre
-        s.r = r
-
-    def draw(s, surface, colour=pygame.Color(50,50,50), fill=False):
-        p = np.array(s.centre)
-        pygame.draw.polygon(surface, colour,
-                [p+(0,-s.r), p+(s.r,0), p+(0,s.r), p+(-s.r,0)], not fill)
-
-    def move(s, disp):
-        print(disp)
-        s.centre = (*vect(add, s.centre, disp),)
-
-    def move_to(s, pos):
-        s.centre = pos
-
-def _aabb_draw(s, surface, colour=pygame.Color(50,50,50), fill=False):
-    shape = vect(add, s.shape, repeat(1))
-    r = pygame.Rect(*s.min_vert, *shape)
-    pygame.draw.rect(surface, colour, r, not fill)
-
-def _aabb_move(s, disp):
-    s.min_vert = (*vect(add, s.min_vert, disp),)
-    s.max_vert = (*vect(add, s.max_vert, disp),)
-
-def _aabb_move_to(s, pos):
-    disp = (*vect(sub, pos, s.min_vert),)
-    s.move(disp)
-
-
-AABB.draw = _aabb_draw
-AABB.move = _aabb_move
-AABB.move_to = _aabb_move_to
-
-def distance(p1,p2):
-    return sum(map(abs, vect(sub, p1, p2)))
-
-def clamp(v,vmin,vmax):
-    if v < vmin: return vmin
-    return v if v < vmax else vmax
-
-def intersect_circle_circle(c1, c2):
-    return c1.r + c2.r >= distance(c1.centre, c2.centre)
-
-def intersect_circle_point(c, p):
-    return c.r >= distance(c.centre, p)
-
-def intersect_aabb_aabb(aabb1, aabb2):
-    return not (any(vect(gt, aabb1.min_vert, aabb2.max_vert)) or
-                any(vect(gt, aabb2.min_vert, aabb1.max_vert)))
-
-def intersect_aabb_circle(aabb, c):
-    closest_point = vect(clamp, c.centre, aabb.min_vert, aabb.max_vert)
-    return c.r >= distance(closest_point, c.centre)
-
-def intersect_aabb_point(aabb, p):
-    for x, lower, upper in zip(p, aabb.min_vert, aabb.max_vert):
-        if x < lower or x > upper: return False
-    return True
-
-def intersect(a,b):
-    if type(a) is tuple:
-        b, a = a, b
-    if type(a) is Sphere:
-        if type(b) is Sphere:
-            return intersect_circle_circle(a,b)
-        elif type(b) is AABB:
-            return intersect_aabb_circle(b,a)
-        elif type(b) is tuple:
-            return intersect_circle_point(a,b)
-    elif type(a) is AABB:
-        if type(b) is AABB:
-            return intersect_aabb_aabb(a,b)
-        elif type(b) is Sphere:
-            return intersect_aabb_circle(a,b)
-        elif type(b) is tuple:
-            return intersect_aabb_point(a,b)
-    raise TypeError
+from PartitionTree import partition_tree
+from shapes import AABB, Sphere
+from intersection import intersect
 
 pygame.init()
 pygame.mouse.set_visible(False)
@@ -109,18 +23,18 @@ def select_object(point):
         selected = None
     else:
         try:
-            selected = next(filter(p(intersect,point), shapes))
+            selected = next(filter(pf(intersect,point), shapes))
         except:
             selected = None
             return False
     return True
 
 PTree = partition_tree()
-ptree = PTree([], bounds=AABB((0,0), screen.get_size()))
+tree = PTree([], bounds=AABB((0,0), screen.get_size()))
 
-def draw_ptree(surface):
+def draw_tree(surface):
     bounds = []
-    nodes = [ptree]
+    nodes = [tree]
 
     while nodes:
         node = nodes.pop()
@@ -139,9 +53,9 @@ def draw_ptree(surface):
             col.r = 0xFF
         aabb.draw(surface, col)
 
-def split_ptree(point):
+def split_tree(point):
     leaves = []
-    nodes = [ptree]
+    nodes = [tree]
     while nodes:
         node = nodes.pop()
         if intersect(node.bounds, point):
@@ -161,7 +75,7 @@ while True:
         if event.type == pygame.QUIT:
             sys.exit()
         if event.type == pygame.MOUSEBUTTONUP:
-            select_object(mouse_pos) or split_ptree(mouse_pos)
+            select_object(mouse_pos) or split_tree(mouse_pos)
 
 
 
@@ -187,7 +101,7 @@ while True:
             col.b = 255
         shape.draw(screen, col)
 
-    draw_ptree(screen)
+    draw_tree(screen)
 
     pygame.draw.rect(screen, (0,0,0), pygame.Rect(pygame.mouse.get_pos(),(1,1)))
 

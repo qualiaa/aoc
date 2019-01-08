@@ -1,21 +1,12 @@
 from itertools import product, starmap
 from functools import partial as p
-from operator import gt, sub
+from operator import sub
 
 import numpy as np
 
-def intersect_aabb_point(aabb, p):
-    for x, lower, upper in zip(p, aabb.min_vert, aabb.max_vert):
-        if x < lower or x > upper: return False
-    return True
-
-class AABB:
-    def __init__(s, min_vert, max_vert):
-        s.min_vert = min_vert
-        s.max_vert = max_vert
-        s.shape = (*starmap(sub,zip(max_vert, min_vert)),)
-
-    def __str__(s): return f"{s.min_vert} to {s.max_vert}"
+from utils import vect
+from intersection import intersect_aabb_point
+from shapes import AABB
 
 def partition_tree(
         max_depth=32,
@@ -42,7 +33,7 @@ def partition_tree(
         def done(s):
             return len(s) < Tree.max_bucket or s.depth >= Tree.max_depth or any(
                     map(lambda x: x < 1,
-                        starmap(sub, zip(s.bounds.max_vert, s.bounds.min_vert))))
+                        vect(sub, s.bounds.max_vert, s.bounds.min_vert)))
 
 
         def split(s):
