@@ -28,7 +28,6 @@ class AABB:
 
     def __str__(s): return f"{s.min_vert} to {s.max_vert}"
 
-
 class Sphere:
     def from_string(line):
         centre = tuple(map(int,re.search("<(-?\d+),(-?\d+),(-?\d+)>",line).groups()))

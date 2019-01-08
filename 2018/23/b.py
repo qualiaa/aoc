@@ -5,9 +5,9 @@ from functools import partial as pf
 from operator import attrgetter
 from itertools import product
 
+from intersection import distance, intersect_circle_point, intersect_aabb_circle
 from PQ import PQ
 from PartitionTree import partition_tree
-from intersection import distance, intersect_circle_point, intersect_aabb_circle
 from shapes import Sphere
 
 def count_intersections(point):
@@ -30,7 +30,7 @@ def find_highest_priority(aabb):
 
     return max(point_priorities)
 
-drones = [Sphere.from_string(l) for l in sys.stdin]
+drones = [*map(Sphere.from_string, sys.stdin)]
 
 Tree = partition_tree(pos_fn=attrgetter("centre"),
                       membership_fn=intersect_aabb_circle)
@@ -51,6 +51,5 @@ while node_queue:
 
         elif priority(c) >= best_priority and len(c) > Tree.max_bucket:
             best_priority = max(best_priority, find_highest_priority(c.bounds))
-
 
 print(-best_priority[1])

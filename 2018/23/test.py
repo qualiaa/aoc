@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 
-import time
 import pygame
 import sys
+import time
 from functools import partial as pf
 
 from PartitionTree import partition_tree
@@ -14,7 +14,6 @@ pygame.mouse.set_visible(False)
 
 screen = pygame.display.set_mode((640, 480),0,32)
 shapes = [Sphere([0,0],20), AABB((-10,-10),(10,10))]
-
 
 selected = None
 def select_object(point):

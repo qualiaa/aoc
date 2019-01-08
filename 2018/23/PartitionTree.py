@@ -35,7 +35,6 @@ def partition_tree(
                     map(lambda x: x < 1,
                         vect(sub, s.bounds.max_vert, s.bounds.min_vert)))
 
-
         def split(s):
             if not s.children:
                 middle = [x+w//2 for x,w in zip(s.bounds.min_vert, s.bounds.shape)]

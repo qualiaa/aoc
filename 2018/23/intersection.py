@@ -1,7 +1,7 @@
 from operator import sub
-from utils import clamp, vect
 
 from shapes import AABB, Sphere
+from utils import clamp, vect
 
 
 # NB: this is manhattan distance
