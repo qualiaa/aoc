@@ -37,9 +37,6 @@ def intersect_aabb_circle(aabb, c):
 def count_intersections(point):
     return sum(map(lambda c: intersect_circle_point(c, point), drones))
 
-def max_distance(aabb):
-    return max(map(pf(distance, (0,0,0)), product(aabb.min_vert, aabb.max_vert)))
-
 def min_distance(aabb):
     return min(map(pf(distance, (0,0,0)), product(aabb.min_vert, aabb.max_vert)))
 
