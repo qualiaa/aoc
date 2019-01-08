@@ -2,16 +2,18 @@
 
 import re
 import sys
-from functools import partial as p
+from functools import partial as pf
 from operator import sub, attrgetter
-from itertools import starmap
+from itertools import starmap, product
 
-import numpy as np
 from PQ import PQ
 from PartitionTree import partition_tree
 
+def vect(f, *args):
+    return starmap(f, zip(*args))
+
 def distance(p1,p2):
-    return sum(map(abs,starmap(sub, zip(p1,p2))))
+    return sum(map(abs, vect(sub, p1, p2)))
 
 class Sphere:
     def __init__(s, line):
@@ -20,40 +22,66 @@ class Sphere:
 
 def clamp(v,vmin,vmax):
     if v < vmin: return vmin
-    return v if vmin < vmax else vmax
+    return v if v < vmax else vmax
 
-def intersect_circle_circle(c1, c2):
-    return c1.r + c2.r >= distance(c1.centre, c2.centre)
+def intersect_circle_point(c, p):
+    return c.r >= distance(c.centre, p)
 
 def intersect_aabb_circle(aabb, c):
-    closest_point = starmap(clamp, zip(c.centre, aabb.min_vert, aabb.max_vert))
+    closest_point = vect(clamp, c.centre, aabb.min_vert, aabb.max_vert)
     return c.r >= distance(closest_point, c.centre)
 
 
-"""
-def intersectsAll(d1, ds):
-    return all(map(p(intersects, d1), ds))
 
 
-def allIntersect(ds):
-    for i,d1 in enumerate(ds):
-        if not all(intersect(d1,d2) for d2 in ds[i:])
-        for d2 in ds[i:]:
-            if return 
-"""
+def count_intersections(point):
+    return sum(map(lambda c: intersect_circle_point(c, point), drones))
+
+def max_distance(aabb):
+    return max(map(pf(distance, (0,0,0)), product(aabb.min_vert, aabb.max_vert)))
+
+def min_distance(aabb):
+    return min(map(pf(distance, (0,0,0)), product(aabb.min_vert, aabb.max_vert)))
+
+def priority(n):
+    return len(n), -min_distance(n.bounds)
+
+def find_highest_priority(aabb):
+    ranges = [range(start, end+1)
+              for start, end in zip(aabb.min_vert, aabb.max_vert)]
+    points = product(*ranges)
+
+    point_priorities = map(lambda point: (
+            count_intersections(point), -distance((0,0,0), point)
+        ), points)
+
+    return max(point_priorities)
+
 
 
 drones = [Sphere(l) for l in sys.stdin]
 
-Tree = partition_tree(pos_fn=attrgetter("centre"), membership_fn=intersect_aabb_circle)
 
-to_split = PQ([(Tree(drones), len(drones))])
+Tree = partition_tree(pos_fn=attrgetter("centre"),
+                      membership_fn=intersect_aabb_circle)
 
-while to_split:
-    node,_ = to_split.popitem()
-    print(len(to_split))
+node_queue = PQ([(Tree(drones), (len(drones), 0))])
+best_priority = -sys.maxsize, -sys.maxsize
+
+
+while node_queue:
+    node, priority_metric = node_queue.popitem()
+
+    if priority_metric < best_priority:
+        break
+
     children = node.split()
     for c in children:
-        print(c)
-    to_split.update({c: len(c) for c in children if not c.done()})
+        if not c.done():
+            node_queue[c] = priority(c)
 
+        elif priority(c) >= best_priority and len(c) > Tree.max_bucket:
+            best_priority = max(best_priority, find_highest_priority(c.bounds))
+
+
+print(-best_priority[1])

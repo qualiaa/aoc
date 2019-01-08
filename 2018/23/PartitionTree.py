@@ -13,43 +13,43 @@ class AABB:
     def __init__(s, min_vert, max_vert):
         s.min_vert = min_vert
         s.max_vert = max_vert
-        s.shape = starmap(sub,zip(max_vert, min_vert))
+        s.shape = (*starmap(sub,zip(max_vert, min_vert)),)
 
     def __str__(s): return f"{s.min_vert} to {s.max_vert}"
 
 def partition_tree(
         max_depth=32,
-        max_bucket=500,
-        pos_fn=lambda x: x,
-        membership_fn=intersect_aabb_point):
+        max_bucket=100,
+        pos_fn=None,
+        membership_fn=None):
     class Tree:
         def __init__(s, it, depth=0, bounds=None):
             s.depth = depth
             s.bounds = bounds
-            s.children = None
+            s.children = []
             possible_elements = list(it)
-            
+
             if not bounds:
                 s.elements = possible_elements
                 positions = [Tree.pos_fn(el) for el in s.elements]
-                s.bounds = AABB(np.min(positions,0), np.max(positions,0))
+                min_coord = np.min(positions,0)
+                max_coord = np.max(positions,0)
+                s.bounds = AABB(min_coord, max_coord)
             else:
                 s.elements = list(filter(p(Tree.membership_fn, s.bounds),
                                          possible_elements))
 
         def done(s):
             return len(s) < Tree.max_bucket or s.depth >= Tree.max_depth or any(
-                    map(p(gt,2),
+                    map(lambda x: x < 1,
                         starmap(sub, zip(s.bounds.max_vert, s.bounds.min_vert))))
-                    
+
 
         def split(s):
             if not s.children:
-                s.children = []
                 middle = [x+w//2 for x,w in zip(s.bounds.min_vert, s.bounds.shape)]
                 lb = zip(s.bounds.min_vert, middle) #xyz
                 ub = zip([m+1 for m in middle], s.bounds.max_vert) #XYZ
-                children = []
                 for xxyyzz in product(*tuple(zip(lb,ub))): # product(xX,yY,zZ)
                     # (x1, x2), (y1, y2), (z1, z2)
                     # -> (x1, y1, z1), (x2, y2, z2)
@@ -63,7 +63,9 @@ def partition_tree(
 
     Tree.max_depth = max_depth
     Tree.max_bucket = max_bucket
+    Tree.pos_fn = pos_fn if pos_fn else lambda x: x
+    if not membership_fn:
+        membership_fn = lambda aabb, obj: intersect_aabb_point(aabb, Tree.pos_fn(obj))
     Tree.membership_fn = membership_fn
-    Tree.pos_fn = pos_fn
 
     return Tree
