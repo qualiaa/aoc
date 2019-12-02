@@ -1,4 +1,5 @@
 #!/usr/bin/sed -Enf
+# Run as ./b.sed | tr -d '\n' | wc -m
 s/$/:/
 :1
 s/9:/8:x/;s/8:/7:x/;s/7:/6:x/;s/6:/5:x/;s/5:/4:x/;s/4:/3:x/;s/3:/2:x/;s/2:/1:x/;s/1:/0:x/
