@@ -1,8 +1,11 @@
-{-# Language FlexibleInstances #-}
 module IntCode
 ( runProgram
 , evalProgram
 , execProgram
+, coroutine
+, resume
+, Coroutine(..)
+, Termination(..)
 , Input
 , Output
 , Program
@@ -16,7 +19,7 @@ import Control.Monad.ST
 import Data.Array.Base (unsafeFreezeSTUArray)
 import Data.Array.ST
 import Data.Either (isLeft, fromLeft)
-import Data.Maybe (fromJust)
+import Data.Maybe (fromJust, fromMaybe)
 import Data.List (uncons)
 import Data.STRef
 import qualified Data.Array.Unboxed as AU
@@ -25,10 +28,9 @@ runProgram  :: Program -> Input -> (Program, Output)
 evalProgram :: Program -> Input -> Output
 execProgram :: Program -> Input -> Program
 
-instance Show (Int -> Parameter) where
-  show m = if isLeft (m 0) then "LEFT!" else "RIGHT!"
-
-data Instruction = Add | Mul | Get | Put | JIT | JIF | LT_ | Eql | End deriving (Eq, Show)
+data Termination = Success | Pause | Error deriving (Eq, Show)
+data Instruction = Add | Mul | Get | Put | JIT | JIF | LT_ | Eql | End
+                   deriving (Eq, Show)
 type Value   = Int
 type Address = Int
 type Parameter = Either Address Value
@@ -43,22 +45,19 @@ type Environment s = (Memory s, InstructionPtr s)
 type Input         = [Value]
 type Output        = [Value]
 type VM s = RWST (Environment s) Output Input (ST s)
+type VMOp s = VM s (Maybe Termination)
 
 -- Parsing
 toModes :: [Int] -> Maybe [Mode]
 toModes = sequence . map toMode
-    where toMode 0 = Just Left
-          toMode 1 = Just Right
-          toMode _ = Nothing
+  where toMode 0 = Just Left
+        toMode 1 = Just Right
+        toMode _ = Nothing
 
 
 interpretOpcode :: Value -> Maybe (Instruction, [Mode])
 interpretOpcode n = (,) <$> toInstruction inst <*> (toModes $ digits modes)
-    where (modes, inst) = n `divMod` 100
-
-parameterToValue :: Parameter -> VM s Value
-parameterToValue (Right p) = return p
-parameterToValue (Left p) = readMem p
+  where (modes, inst) = n `divMod` 100
 
 -- VM state operations
 writeMem :: Address -> Value -> VM s ()
@@ -77,8 +76,8 @@ moveIP n = do ip <- snd <$> ask; lift $ modifySTRef ip (+ n)
 setIP  n = do ip <- snd <$> ask; lift $ writeSTRef ip n
 getIP    = do ip <- snd <$> ask; lift $ readSTRef ip
 
-getInput :: VM s Value
-getInput = state (fromJust . uncons)
+getInput :: VM s (Maybe Value)
+getInput = state (maybe (Nothing, []) (first Just) . uncons)
 
 putOutput :: Value -> VM s ()
 putOutput v = tell [v]
@@ -104,39 +103,55 @@ executeInstruction JIT modes = jumpOp (/=0) modes
 executeInstruction JIF modes = jumpOp (==0) modes
 executeInstruction LT_ modes = cmpOp LT modes
 executeInstruction Eql modes = cmpOp EQ modes
-executeInstruction End _ = return ()
+executeInstruction End _ = return Nothing
 
-binOp :: (Value -> Value -> Value) -> [Mode] -> VM s ()
+-- TODO: Catch invalid address error
+binOp :: (Value -> Value -> Value) -> [Mode] -> VMOp s
 binOp op modes = do
   [in1, in2, out] <- getParameters modes 3
   [x, y] <- mapM parameterToValue [in1, in2]
   writeMem (getAddress out) (op x y)
+  return Nothing
 
-getOp :: [Mode] -> VM s ()
+-- TODO: Catch invalid address error
+getOp :: [Mode] -> VMOp s
 getOp modes =  do
-  [addr] <- fmap getAddress <$> getParameters modes 1
-  getInput >>= writeMem addr
+  input <- getInput
+  case input of
+    Nothing -> return $ Just Pause
+    Just input' -> do
+      [addr] <- fmap getAddress <$> getParameters modes 1
+      writeMem addr input'
+      return Nothing
 
-putOp :: [Mode] -> VM s ()
+putOp :: [Mode] -> VMOp s
 putOp modes = do
   [v] <- mapM parameterToValue =<< getParameters modes 1
   putOutput v
+  return Nothing
 
-jumpOp :: (Value -> Bool) -> [Mode] -> VM s ()
+jumpOp :: (Value -> Bool) -> [Mode] -> VMOp s
 jumpOp p modes = do
-    [test, addr] <- mapM parameterToValue =<< getParameters modes 2
-    when (p test) $ setIP addr
+  [test, addr] <- mapM parameterToValue =<< getParameters modes 2
+  when (p test) $ setIP addr
+  return Nothing
 
-cmpOp :: Ordering -> [Mode] -> VM s ()
+-- TODO: Catch invalid address error
+cmpOp :: Ordering -> [Mode] -> VMOp s
 cmpOp ord modes = do
-    [in1, in2, out] <- getParameters modes 3
-    [x, y] <- mapM parameterToValue [in1, in2]
-    writeMem (getAddress out) $ if compare x y == ord then 1 else 0
+  [in1, in2, out] <- getParameters modes 3
+  [x, y] <- mapM parameterToValue [in1, in2]
+  writeMem (getAddress out) $ if compare x y == ord then 1 else 0
+  return Nothing
 
 
 -- Execution
 getInstruction :: VM s (Maybe (Instruction, [Mode]))
 getInstruction = interpretOpcode <$> (readMem =<< getIP)
+
+parameterToValue :: Parameter -> VM s Value
+parameterToValue (Right p) = return p
+parameterToValue (Left p) = readMem p
 
 getParameters :: [Mode] -> Int -> VM s [Parameter]
 getParameters modes n = do
@@ -147,27 +162,60 @@ getParameters modes n = do
   return $ getZipList $ modes' <*> ZipList vals
 
 
-nextInstruction :: VM s ()
+nextInstruction :: VM s Termination
 nextInstruction = do
   inst <- getInstruction
   case inst of
-    Nothing             -> writeMem 0 (-1) -- clear first register on error
-    Just (End,_)        -> return ()
+    Nothing             -> return Error
+    Just (End,_)        -> return Success
     Just (inst', modes) -> do
-        executeInstruction inst' modes
-        nextInstruction
+      termination <- executeInstruction inst' modes
+      case termination of
+        Nothing -> nextInstruction
+        Just t -> return t
 
--- Entrypoints
-runProgram p input = first AU.elems $ runST (do
-      text <- newListArray (0, length p - 1) p
-      ip <- newSTRef 0
-      (_, w) <- execRWST nextInstruction (text,ip) input
-      (,) <$> unsafeFreezeSTUArray text <*> return w
-  )
+startVM program ptr input = runST $ do
+      memory <- newListArray (0, length program - 1) program
+      ip <- newSTRef ptr
+      (term, unconsumedInput, output) <- runRWST nextInstruction (memory, ip) input
+
+      VMOutput <$> unsafeFreezeSTUArray memory
+               <*> readSTRef ip
+               <*> pure unconsumedInput
+               <*> pure output
+               <*> pure term
 -- The compile errors for point free style are _not_ nice here >_>
 
+-- Entrypoints
+data VMOutput = VMOutput { vmMemory :: AU.UArray Address Value
+                         , vmIP :: Int
+                         , vmUnconsumedInput :: Input
+                         , vmOutput :: Output
+                         , vmState :: Termination
+                         }
+
+runProgram  p input = (AU.elems $ vmMemory vm, vmOutput vm)
+  where vm = startVM p 0 input
 evalProgram p = snd . runProgram p
 execProgram p = fst . runProgram p
+
+-- TODO: Use unsafeThaw to avoid copies
+--type CoroutineState = (AU.UArray Address Value, Int)
+data Coroutine = Paused (AU.UArray Address Value) Int Input
+               | Finished Termination Program
+
+outputToCoroutine :: VMOutput -> (Coroutine, Output)
+outputToCoroutine vm = (co vm, vmOutput vm)
+  where co VMOutput{vmState = Pause} = Paused (vmMemory vm) (vmIP vm) (vmUnconsumedInput vm)
+        co _ = Finished (vmState vm) (AU.elems $ vmMemory vm)
+
+coroutine :: Program -> Input -> (Coroutine, Output)
+coroutine p input = outputToCoroutine $ startVM p 0 input
+
+resume :: Coroutine -> Input -> (Coroutine, Output)
+resume co@(Finished _ _) _ = (co, [])
+resume (Paused memory ip oldInput) newInput =
+  outputToCoroutine $ startVM (AU.elems memory) ip (oldInput ++ newInput)
 
 -- Convenience functions
 digits 0 = []
