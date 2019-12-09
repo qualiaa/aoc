@@ -8,7 +8,7 @@ module IntCode
 , Termination(..)
 , Input
 , Output
-, Program
+, ProgramSource
 ) where
 
 import Control.Applicative (ZipList(..))
@@ -16,7 +16,7 @@ import Control.Arrow (first)
 import Control.Monad (when)
 import Control.Monad.RWS.Strict
 import Control.Monad.ST
-import Data.Array.Base (unsafeFreezeSTUArray)
+import Data.Array.Base (unsafeFreezeSTUArray, unsafeThaw)
 import Data.Array.ST
 import Data.Either (isLeft, fromLeft)
 import Data.Maybe (fromJust, fromMaybe)
@@ -24,19 +24,19 @@ import Data.List (uncons)
 import Data.STRef
 import qualified Data.Array.Unboxed as AU
 
-runProgram  :: Program -> Input -> (Program, Output)
-evalProgram :: Program -> Input -> Output
-execProgram :: Program -> Input -> Program
+runProgram  :: ProgramSource -> Input -> (ProgramSource, Output)
+evalProgram :: ProgramSource -> Input -> Output
+execProgram :: ProgramSource -> Input -> ProgramSource
 
-data Termination = Success | Pause | Error deriving (Eq, Show)
-data Instruction = Add | Mul | Get | Put | JIT | JIF | LT_ | Eql | End
-                   deriving (Eq, Show)
+-- Interface types
 type Value   = Int
 type Address = Int
-type Parameter = Either Address Value
-type Mode = Int -> Parameter
+type ProgramSource = [Value]
 
-type Program = [Value]
+data Termination = Success | Pause | Error deriving (Eq, Show)
+data Coroutine = Paused (AU.UArray Address Value) Int Input
+               | Finished Termination ProgramSource
+
 
 -- VM definition
 type Memory s = (STUArray s Address Int)
@@ -46,6 +46,13 @@ type Input         = [Value]
 type Output        = [Value]
 type VM s = RWST (Environment s) Output Input (ST s)
 type VMOp s = VM s (Maybe Termination)
+data Instruction = Add | Mul | Get | Put | JIT | JIF | LT_ | Eql | End
+                   deriving (Eq, Show)
+
+-- Other Internal types
+type FrozenMemory = AU.UArray Address Value
+type Parameter = Either Address Value
+type Mode = Int -> Parameter
 
 -- Parsing
 toModes :: [Int] -> Maybe [Mode]
@@ -54,6 +61,17 @@ toModes = sequence . map toMode
         toMode 1 = Just Right
         toMode _ = Nothing
 
+toInstruction :: Int -> Maybe Instruction
+toInstruction 1  = Just Add
+toInstruction 2  = Just Mul
+toInstruction 3  = Just Get
+toInstruction 4  = Just Put
+toInstruction 5  = Just JIT
+toInstruction 6  = Just JIF
+toInstruction 7  = Just LT_
+toInstruction 8  = Just Eql
+toInstruction 99 = Just End
+toInstruction _  = Nothing
 
 interpretOpcode :: Value -> Maybe (Instruction, [Mode])
 interpretOpcode n = (,) <$> toInstruction inst <*> (toModes $ digits modes)
@@ -83,18 +101,6 @@ putOutput :: Value -> VM s ()
 putOutput v = tell [v]
 
 -- Operations
-toInstruction :: Int -> Maybe Instruction
-toInstruction 1  = Just Add
-toInstruction 2  = Just Mul
-toInstruction 3  = Just Get
-toInstruction 4  = Just Put
-toInstruction 5  = Just JIT
-toInstruction 6  = Just JIF
-toInstruction 7  = Just LT_
-toInstruction 8  = Just Eql
-toInstruction 99 = Just End
-toInstruction _  = Nothing
-
 executeInstruction Add modes = binOp (+) modes
 executeInstruction Mul modes = binOp (*) modes
 executeInstruction Get modes = getOp modes
@@ -174,8 +180,9 @@ nextInstruction = do
         Nothing -> nextInstruction
         Just t -> return t
 
-startVM program ptr input = runST $ do
-      memory <- newListArray (0, length program - 1) program
+startVM :: FrozenMemory -> Int -> Input -> VMOutput
+startVM frozenMemory ptr input = runST $ do
+      memory <- unsafeThaw frozenMemory
       ip <- newSTRef ptr
       (term, unconsumedInput, output) <- runRWST nextInstruction (memory, ip) input
 
@@ -187,7 +194,7 @@ startVM program ptr input = runST $ do
 -- The compile errors for point free style are _not_ nice here >_>
 
 -- Entrypoints
-data VMOutput = VMOutput { vmMemory :: AU.UArray Address Value
+data VMOutput = VMOutput { vmMemory :: FrozenMemory
                          , vmIP :: Int
                          , vmUnconsumedInput :: Input
                          , vmOutput :: Output
@@ -195,27 +202,25 @@ data VMOutput = VMOutput { vmMemory :: AU.UArray Address Value
                          }
 
 runProgram  p input = (AU.elems $ vmMemory vm, vmOutput vm)
-  where vm = startVM p 0 input
+  where vm = startVM (AU.listArray (0,length p - 1) p) 0 input
 evalProgram p = snd . runProgram p
 execProgram p = fst . runProgram p
-
--- TODO: Use unsafeThaw to avoid copies
---type CoroutineState = (AU.UArray Address Value, Int)
-data Coroutine = Paused (AU.UArray Address Value) Int Input
-               | Finished Termination Program
 
 outputToCoroutine :: VMOutput -> (Coroutine, Output)
 outputToCoroutine vm = (co vm, vmOutput vm)
   where co VMOutput{vmState = Pause} = Paused (vmMemory vm) (vmIP vm) (vmUnconsumedInput vm)
         co _ = Finished (vmState vm) (AU.elems $ vmMemory vm)
 
-coroutine :: Program -> Input -> (Coroutine, Output)
-coroutine p input = outputToCoroutine $ startVM p 0 input
+coroutine :: ProgramSource -> Input -> (Coroutine, Output)
+coroutine p input = resume (cocreate p) input
+
+cocreate :: ProgramSource -> Coroutine
+cocreate p = Paused (AU.listArray (0,length p - 1) p) 0 []
 
 resume :: Coroutine -> Input -> (Coroutine, Output)
 resume co@(Finished _ _) _ = (co, [])
 resume (Paused memory ip oldInput) newInput =
-  outputToCoroutine $ startVM (AU.elems memory) ip (oldInput ++ newInput)
+  outputToCoroutine $ startVM memory ip (oldInput ++ newInput)
 
 -- Convenience functions
 digits 0 = []

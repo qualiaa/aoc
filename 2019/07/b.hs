@@ -7,7 +7,7 @@ feedback (c:cs) i = let result = scanl' (\(_,i) c -> resume c i) (resume c i) cs
                          ((Finished _ _), o) -> o
                          (_, o) -> feedback (map fst result) o
 
-amplifierArray :: Program -> [Int] -> [Int]
+amplifierArray :: ProgramSource -> [Int] -> [Int]
 amplifierArray program phases = feedback (map amp phases) [0]
   where amp phase = fst $ coroutine program [phase]
 

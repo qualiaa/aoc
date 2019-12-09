@@ -1,7 +1,7 @@
 import Data.List (permutations, foldl')
 import IntCode
 
-amplifierArray :: Program -> [Int] -> Int
+amplifierArray :: ProgramSource -> [Int] -> Int
 amplifierArray program phases = foldl' amp 0 phases
   where amp input phase = head $ evalProgram program [phase, input]
 
