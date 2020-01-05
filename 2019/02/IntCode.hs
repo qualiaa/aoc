@@ -1,3 +1,4 @@
+{-# LANGUAGE TupleSections #-}
 module IntCode
 ( runProgram
 , evalProgram
@@ -5,6 +6,8 @@ module IntCode
 , coroutine
 , cocreate
 , resume
+, withCoroutine
+, withCoroutine'
 , Coroutine(..)
 , Termination(..)
 , Input
@@ -254,6 +257,12 @@ cocreate p = Paused (AU.listArray (0,length p - 1) p) 0 0 []
 resume co@(Finished _ _) _ = (co, [])
 resume (Paused memory ip rb oldInput) newInput =
   outputToCoroutine $ startVM memory ip rb (oldInput ++ newInput)
+
+withCoroutine co f = withCoroutine' co f []
+withCoroutine' :: (Monad m) => Coroutine -> (Output -> m Input) -> Input -> m (Coroutine, Output)
+withCoroutine' co f i = case resume co i of
+  (co@Finished{}, o)   -> (co,) <$> f o
+  (co@Paused{}, o) -> withCoroutine' co f =<< f o
 
 -- Convenience functions
 digits 0 = []
