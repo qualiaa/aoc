@@ -3,6 +3,7 @@ module IntCode
 , evalProgram
 , execProgram
 , coroutine
+, cocreate
 , resume
 , Coroutine(..)
 , Termination(..)
@@ -28,6 +29,9 @@ import qualified Data.HashTable.Class as HTC
 runProgram  :: ProgramSource -> Input -> (ProgramSource, Output)
 evalProgram :: ProgramSource -> Input -> Output
 execProgram :: ProgramSource -> Input -> ProgramSource
+coroutine   :: ProgramSource -> Input -> (Coroutine, Output)
+cocreate    :: ProgramSource -> Coroutine
+resume      :: Coroutine -> Input -> (Coroutine, Output)
 
 -- Interface types
 type Value   = Int
@@ -244,13 +248,9 @@ outputToCoroutine vm = (co vm, vmOutput vm)
                                               (vmUnconsumedInput vm)
         co _ = Finished (vmState vm) (AU.elems $ vmMemory vm)
 
-coroutine :: ProgramSource -> Input -> (Coroutine, Output)
 coroutine p input = resume (cocreate p) input
-
-cocreate :: ProgramSource -> Coroutine
 cocreate p = Paused (AU.listArray (0,length p - 1) p) 0 0 []
 
-resume :: Coroutine -> Input -> (Coroutine, Output)
 resume co@(Finished _ _) _ = (co, [])
 resume (Paused memory ip rb oldInput) newInput =
   outputToCoroutine $ startVM memory ip rb (oldInput ++ newInput)
