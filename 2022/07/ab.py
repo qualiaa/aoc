@@ -210,4 +210,3 @@ remaining_space = 70_000_000 - root.size
 needed_space = 30_000_000
 print(sum(d.size for d in root.find(lambda d: d.size <= 100_000)))
 print(min(d.size for d in root.find(lambda d: d.size >= needed_space - remaining_space)))
-
