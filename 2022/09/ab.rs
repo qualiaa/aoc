@@ -87,9 +87,7 @@ fn main() {
     }).collect::<HashSet<_>>().len());
 
     println!("{:?}", moves.iter().scan([ZERO; 10], |knots, v| {
-        let mut iter = knots.iter_mut();
-        let head = iter.next().unwrap();
-        *head += v;
-        Some(*iter.fold(head, pull))
+        knots[0] += v;
+        knots.iter_mut().reduce(pull).map(|x| *x)
     }).collect::<HashSet<_>>().len());
 }
