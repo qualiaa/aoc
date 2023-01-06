@@ -1,9 +1,8 @@
 use std::collections::HashSet;
-use std::fmt::Debug;
 use std::iter::repeat;
 use std::ops::{Add, AddAssign, Sub, SubAssign, Deref};
 
-#[derive(Hash, PartialEq, Eq, Clone, Copy, Debug)]
+#[derive(Hash, PartialEq, Eq, Clone, Copy)]
 struct Coord (i32, i32);
 
 //impl Coord {}
@@ -86,7 +85,7 @@ fn main() {
         *h += &v; Some(*pull(h, t))
     }).collect::<HashSet<_>>().len());
 
-    println!("{:?}", moves.iter().scan([ZERO; 10], |knots, v| {
+    println!("{}", moves.iter().scan([ZERO; 10], |knots, v| {
         knots[0] += v;
         knots.iter_mut().reduce(pull).map(|x| *x)
     }).collect::<HashSet<_>>().len());
