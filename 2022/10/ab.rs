@@ -81,7 +81,7 @@ fn main() {
     });
 
     for (i, pixel) in pixels.enumerate(){
-        print!("{}", if pixel {'#'} else {'.'});
+        print!("{}", if pixel {'%'} else {' '});
         if i % 40 == 39 {
             println!("");
         }
