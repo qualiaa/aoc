@@ -47,43 +47,43 @@ impl Map {
         Map {map, shape}
     }
 
-    fn fastest_route_once(
+    fn fastest_route(
         &self,
         start: Point,
         end: &Point,
         valid_neighbour: impl FnMut(&Map, &Point, &Point) -> bool
     ) -> Option<usize> {
-        self.fastest_route(start, end, valid_neighbour, &mut HashMap::new())
+        self.fastest_route_with_prior(start, end, valid_neighbour, &mut HashMap::new())
     }
 
-    fn fastest_route(
+    fn fastest_route_with_prior(
         &self,
         start: Point,
         end: &Point,
         mut valid_neighbour: impl FnMut(&Map, &Point, &Point) -> bool,
-        distances: &mut Distances
+        prior_distances: &mut Distances
     ) -> Option<usize> {
         let heuristic = |x: &Point| (end - x).l1();
 
-        let mut pq = BinaryHeap::new();
-
         let start = Rc::new(start);
-        distances.insert(Rc::clone(&start), 0);
+        prior_distances.insert(Rc::clone(&start), 0);
+
+        let mut pq = BinaryHeap::new();
         pq.push((Reverse(heuristic(&start)), start));
 
         while let Some((_, p)) = pq.pop() {
-            let distance = distances[&p] + 1;
+            let distance = prior_distances[&p] + 1;
             let accessible_neighbours = p.neighbours()
                 .filter(|q: &Point| self.in_bounds(q) && valid_neighbour(self, &p, q))
                 .map(Rc::new);
             for q in accessible_neighbours {
-                let prior_distance = distances.get(&q).copied();
+                let prior_distance = prior_distances.get(&q).copied();
                 if distance < prior_distance.unwrap_or(usize::MAX) {
                     pq.push((Reverse(heuristic(&q) + distance), Rc::clone(&q)));
-                    distances.insert(Rc::clone(&q), distance);
+                    prior_distances.insert(Rc::clone(&q), distance);
                 }
                 if *q == *end {
-                    return Some(distances.get(&q).copied().unwrap());
+                    return Some(prior_distances.get(&q).copied().unwrap());
                 }
             }
         }
@@ -125,17 +125,17 @@ fn main() {
                 }).collect()
             ).collect());
 
-    println!("{}", map.fastest_route_once(start, &end, gentle_incline).unwrap());
+    println!("{}", map.fastest_route(start, &end, gentle_incline).unwrap());
     println!("{}",
              map.points().filter(
                  |p| map[p] == b'a' && p.neighbours().any(
                      // We take 'a' values which border a 'b' because...
                      |q| map.in_bounds(&q) && map[&q] == b'b'))
              .scan(HashMap::new(),
-                   |mut distances, start| Some(map.fastest_route(
+                   |mut distances, start| Some(map.fastest_route_with_prior(
                        start, &end,
-                       // ... there is no point visiting an 'a',
-                       // as we can start at any 'a'
+                       // ... there is no point visiting an 'a', as we can start
+                       // at any 'a'
                        |m,p,q| m[q] != b'a' && gentle_incline(m, p, q),
                        &mut distances)))
              .filter_map(std::convert::identity)
