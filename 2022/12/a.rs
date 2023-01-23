@@ -1,5 +1,4 @@
 use std::cmp::Reverse;
-use std::convert::TryInto;
 use std::collections::{BinaryHeap, HashMap};
 use std::iter::IntoIterator;
 use std::ops::{Add, Sub, Deref, Index};
@@ -11,6 +10,13 @@ struct Point(isize, isize);
 impl Point {
     fn l1(&self) -> usize {
         (self.0.abs() + self.1.abs()) as usize
+    }
+
+    fn neighbours(&self) -> impl Iterator<Item=Point> {
+        IntoIterator::into_iter([self + &Point(1, 0),
+                                 self + &Point(-1, 0),
+                                 self + &Point(0, 1),
+                                 self + &Point(0, -1)])
     }
 }
 
@@ -33,24 +39,44 @@ struct Map {
     shape: Point
 }
 
+type Distances = HashMap<Rc<Point>, usize>;
+
 impl Map {
     fn new(map: Vec<Vec<u8>>) -> Self {
         let shape = Point(map[0].len() as isize, map.len() as isize);
         Map {map, shape}
     }
 
-    fn fastest_route(&self, start: &Point, end: &Point) -> Option<usize> {
+    fn fastest_route_once(
+        &self,
+        start: Point,
+        end: &Point,
+        valid_neighbour: impl FnMut(&Map, &Point, &Point) -> bool
+    ) -> Option<usize> {
+        self.fastest_route(start, end, valid_neighbour, &mut HashMap::new())
+    }
+
+    fn fastest_route(
+        &self,
+        start: Point,
+        end: &Point,
+        mut valid_neighbour: impl FnMut(&Map, &Point, &Point) -> bool,
+        distances: &mut Distances
+    ) -> Option<usize> {
         let heuristic = |x: &Point| (end - x).l1();
-        let mut distances: HashMap<Rc<Point>, usize> = HashMap::new();
+
         let mut pq = BinaryHeap::new();
-        let start = Rc::new(start.clone());
+
+        let start = Rc::new(start);
         distances.insert(Rc::clone(&start), 0);
         pq.push((Reverse(heuristic(&start)), start));
 
         while let Some((_, p)) = pq.pop() {
             let distance = distances[&p] + 1;
-            for q in self.accessible_neighbours(&p) {
-                let q = Rc::new(q);
+            let accessible_neighbours = p.neighbours()
+                .filter(|q: &Point| self.in_bounds(q) && valid_neighbour(self, &p, q))
+                .map(Rc::new);
+            for q in accessible_neighbours {
                 let prior_distance = distances.get(&q).copied();
                 if distance < prior_distance.unwrap_or(usize::MAX) {
                     pq.push((Reverse(heuristic(&q) + distance), Rc::clone(&q)));
@@ -68,14 +94,13 @@ impl Map {
         p.0 >= 0 && p.1 >= 0 && p.0 < self.shape.0 && p.1 < self.shape.1
     }
 
-    fn accessible_neighbours(&self, p: &Point) -> Vec<Point> {
-        IntoIterator::into_iter([p + &Point(1, 0),
-                                 p + &Point(-1, 0),
-                                 p + &Point(0, 1),
-                                 p + &Point(0, -1)])
-            .filter(|q: &Point| self.in_bounds(q) && self[q] <= self[p]+1)
-            .collect()
+    fn points(&self) -> impl Iterator<Item=Point> + '_ {
+        (0..self.shape.1).flat_map(move |y| (0..self.shape.0).map(move |x| Point (x, y)))
     }
+}
+
+fn gentle_incline(map: &Map, p: &Point, q: &Point) -> bool {
+    map[q] <= map[&p]+1
 }
 
 impl Index<&Point> for Map {
@@ -93,12 +118,26 @@ fn main() {
         std::io::stdin().lines()
             .enumerate()
             .map(|(y, l)| l.unwrap().trim().bytes().enumerate().map(
-                |(x, h)| match h.into() {
-                    'S' => {start = Point(x as isize, y as isize); 'a'.try_into().unwrap()},
-                    'E' => {end = Point(x as isize, y as isize); 'z'.try_into().unwrap()},
-                    _ => h
+                |(x, h)| match h {
+                    b'S' => {start = Point(x as isize, y as isize); b'a'},
+                    b'E' => {end = Point(x as isize, y as isize); b'z'},
+                    h => h
                 }).collect()
             ).collect());
-    println!("{}", map.fastest_route(&start, &end).unwrap())
 
+    println!("{}", map.fastest_route_once(start, &end, gentle_incline).unwrap());
+    println!("{}",
+             map.points().filter(
+                 |p| map[p] == b'a' && p.neighbours().any(
+                     // We take 'a' values which border a 'b' because...
+                     |q| map.in_bounds(&q) && map[&q] == b'b'))
+             .scan(HashMap::new(),
+                   |mut distances, start| Some(map.fastest_route(
+                       start, &end,
+                       // ... there is no point visiting an 'a',
+                       // as we can start at any 'a'
+                       |m,p,q| m[q] != b'a' && gentle_incline(m, p, q),
+                       &mut distances)))
+             .filter_map(std::convert::identity)
+             .min().unwrap())
 }
