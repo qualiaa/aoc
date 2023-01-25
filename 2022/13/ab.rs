@@ -48,30 +48,30 @@ impl Ord for Element {
     }
 }
 
-fn parse_number(mut c: char, input: &mut impl Iterator<Item=char>) -> (usize, char) {
+fn parse_number(mut c: char, input: &mut impl Iterator<Item=char>) -> (Element, char) {
     let mut cs = Vec::new();
     while c.is_ascii_digit() {
         cs.push(c);
         c = input.next().unwrap();
     }
-    return (String::from_iter(cs).parse().unwrap(), c);
+    return (Number(String::from_iter(cs).parse().unwrap()), c);
 }
 
-fn parse_list(input: &mut impl Iterator<Item=char>) -> Vec<Element> {
+fn parse_list(input: &mut impl Iterator<Item=char>) -> Element {
     let mut l = Vec::new();
     let mut c = input.next().unwrap();
     let mut n;
     while c != ']' {
         if c == '[' {
-            l.push(List(parse_list(input)));
+            l.push(parse_list(input));
         } else if c.is_ascii_digit() {
             (n, c) = parse_number(c, input);
-            l.push(Number(n));
+            l.push(n);
             continue
         }
         c = input.next().unwrap();
     }
-    l
+    List(l)
 }
 
 fn main() {
@@ -81,7 +81,7 @@ fn main() {
     let mut packets = Vec::new();
     while let Some(c) = input.next() {
         if c == '[' {
-            packets.push(List(parse_list(&mut input)));
+            packets.push(parse_list(&mut input));
         }
     }
     let mut sum: usize = 0;
