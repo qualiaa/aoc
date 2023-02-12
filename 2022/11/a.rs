@@ -146,7 +146,6 @@ mod scan {
         }
 
         pub fn string(&mut self, s: &str) -> ParseResult<String> {
-            let cursor = self.cursor;
             for (i, c) in s.chars().enumerate() {
                 match self.peek_by(i) {
                     Ok(x) if c != x => Err(self.fail(&format!("could not match string `{}'", s))),
@@ -253,12 +252,31 @@ impl Monkey {
 
     fn update(&mut self) -> Vec<(usize, Item)> {
         let items: Vec<_> = self.items.drain(..).collect();
-        items.into_iter().map(
-            |mut item| {
-                self.operation.call(&mut item);
-                item.worry /= 3;
-                (self.targets[(self.test)(&item) as usize], item)
-            }).collect()
+        items.into_iter().map(|mut item| {
+            self.operation.call(&mut item);
+            (self.targets[(self.test)(&item) as usize], item)
+        }).collect()
+    }
+
+    fn num_items(&self) -> usize {
+        self.items.len()
+    }
+
+    fn simulate(monkeys: &mut [Self], num_rounds: usize, worry_reduction: bool) -> Vec<usize> {
+        let num_monkeys = monkeys.len();
+        let mut inspections = vec![0; num_monkeys];
+        for _ in 0..num_rounds {
+            for i in 0..num_monkeys {
+                inspections[i] += monkeys[i].num_items();
+                for (target, mut item) in monkeys[i].update() {
+                    if worry_reduction {
+                        item.worry /= 3;
+                    }
+                    monkeys[target].pass(item);
+                }
+            }
+        }
+        inspections
     }
 }
 
@@ -357,7 +375,32 @@ fn parse_input(s: &mut Scanner) -> ParseResult<Vec<Monkey>> {
     result
 }
 
+fn two_biggest<T: Ord>(values: &[T]) -> Option<(&T, &T)> {
+    if values.len() < 2 {
+        return None
+    }
+    let (a, b) = (&values[0], &values[1]);
+    Some(values[2..].iter().fold((a, b), |prev@(a, b), x| {
+        if a < x {(x, b)} else if b < x {(a, x)} else {prev}
+    }))
+}
+
+fn monkey_business(inspections: &[usize]) -> usize {
+    let (a, b) = two_biggest(inspections).unwrap();
+    a * b
+}
+
 fn main() {
     let mut scanner = Scanner::lazy(std::io::stdin().lines().map(|l|l.unwrap()));
-    let monkeys = parse_input(&mut scanner).unwrap();
+    let mut monkeys = parse_input(&mut scanner).unwrap();
+    let mut inspections = Monkey::simulate(&mut monkeys, 20, true);
+    println!("{}", monkey_business(&inspections));
+
+    // This panics due to an integer overflow... at some point I'll set up cargo
+    // and install a bigint library.
+    inspections
+        .iter_mut()
+        .zip(Monkey::simulate(&mut monkeys, 10_000 - 20, false).into_iter())
+        .for_each(|(x, y)| *x += y);
+    println!("{}", monkey_business(&inspections));
 }
