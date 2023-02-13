@@ -199,8 +199,10 @@ mod scan {
 
 // Disable Copy (hence implicit pass-by-value) to get compiler guarantees that
 // moving moves.
+#[derive(Clone)]
 struct Item {worry: usize}
 
+#[derive(Clone)]
 enum Operand {Old, Num(usize)}
 use Operand::*;
 impl Operand {
@@ -212,6 +214,7 @@ impl Operand {
     }
 }
 
+#[derive(Clone)]
 enum Operation {
     Add(Operand, Operand),
     Mul(Operand, Operand)
@@ -231,17 +234,19 @@ impl Operation {
     }
 }
 
+#[derive(Clone)]
 struct Test(usize);
 impl Test {
-    fn as_fn(self) -> impl FnMut(&Item) -> bool {
-        move |i| i.worry % self.0 == 0
+    fn result(&self, i: &Item) -> bool {
+        i.worry % self.0 == 0
     }
 }
 
+#[derive(Clone)]
 struct Monkey {
     items: Vec<Item>,
     operation: Operation,
-    test: Box<dyn FnMut(&Item) -> bool>,
+    test: Test,
     targets: [usize; 2]
 }
 
@@ -250,11 +255,14 @@ impl Monkey {
         self.items.push(i)
     }
 
-    fn update(&mut self) -> Vec<(usize, Item)> {
+    fn update(&mut self, worry_reduction: bool) -> Vec<(usize, Item)> {
         let items: Vec<_> = self.items.drain(..).collect();
         items.into_iter().map(|mut item| {
             self.operation.call(&mut item);
-            (self.targets[(self.test)(&item) as usize], item)
+            if worry_reduction {
+                item.worry /= 3;
+            }
+            (self.targets[self.test.result(&item) as usize], item)
         }).collect()
     }
 
@@ -263,15 +271,14 @@ impl Monkey {
     }
 
     fn simulate(monkeys: &mut [Self], num_rounds: usize, worry_reduction: bool) -> Vec<usize> {
+        let divisor_product: usize = monkeys.iter().map(|m| m.test.0).product();
         let num_monkeys = monkeys.len();
         let mut inspections = vec![0; num_monkeys];
         for _ in 0..num_rounds {
             for i in 0..num_monkeys {
                 inspections[i] += monkeys[i].num_items();
-                for (target, mut item) in monkeys[i].update() {
-                    if worry_reduction {
-                        item.worry /= 3;
-                    }
+                for (target, mut item) in monkeys[i].update(worry_reduction) {
+                    item.worry %= divisor_product;
                     monkeys[target].pass(item);
                 }
             }
@@ -295,10 +302,10 @@ fn parse_item_list(s: &mut Scanner) -> ParseResult<Vec<Item>> {
     Ok(items)
 }
 
-fn parse_test(s: &mut Scanner) -> ParseResult<impl FnMut(&Item) -> bool> {
+fn parse_test(s: &mut Scanner) -> ParseResult<Test> {
     s.string("divisible by ")?;
     let divisor = s.integer()? as usize;
-    Ok(Test(divisor).as_fn())
+    Ok(Test(divisor))
 }
 
 fn parse_operand(s: &mut Scanner) -> ParseResult<Operand> {
@@ -357,7 +364,7 @@ fn parse_monkey(s: &mut Scanner) -> ParseResult<Monkey> {
     s.skip_some(char::is_ascii_whitespace)?;
     let targets = parse_targets(s)?;
 
-    Ok(Monkey {items, operation: operation.into(), test: Box::new(test), targets})
+    Ok(Monkey {items, operation: operation.into(), test, targets})
 }
 
 fn parse_monkeys(s: &mut Scanner) -> ParseResult<Vec<Monkey>> {
@@ -375,32 +382,30 @@ fn parse_input(s: &mut Scanner) -> ParseResult<Vec<Monkey>> {
     result
 }
 
-fn two_biggest<T: Ord>(values: &[T]) -> Option<(&T, &T)> {
+fn two_biggest<T: Ord>(values: &[T]) -> Option<[&T; 2]> {
     if values.len() < 2 {
         return None
     }
-    let (a, b) = (&values[0], &values[1]);
-    Some(values[2..].iter().fold((a, b), |prev@(a, b), x| {
-        if a < x {(x, b)} else if b < x {(a, x)} else {prev}
-    }))
+    let mut maxima = [&values[0], &values[1]];
+    for v in values[2..].iter() {
+        if maxima[0] < v {
+            maxima[0] = v;
+            maxima.sort()
+        }
+    }
+    Some(maxima)
 }
 
 fn monkey_business(inspections: &[usize]) -> usize {
-    let (a, b) = two_biggest(inspections).unwrap();
-    a * b
+    two_biggest(inspections).unwrap().into_iter().copied().product()
 }
 
 fn main() {
     let mut scanner = Scanner::lazy(std::io::stdin().lines().map(|l|l.unwrap()));
     let mut monkeys = parse_input(&mut scanner).unwrap();
-    let mut inspections = Monkey::simulate(&mut monkeys, 20, true);
+    let mut inspections = Monkey::simulate(&mut monkeys.clone(), 20, true);
     println!("{}", monkey_business(&inspections));
 
-    // This panics due to an integer overflow... at some point I'll set up cargo
-    // and install a bigint library.
-    inspections
-        .iter_mut()
-        .zip(Monkey::simulate(&mut monkeys, 10_000 - 20, false).into_iter())
-        .for_each(|(x, y)| *x += y);
+    let inspections = Monkey::simulate(&mut monkeys, 10_000, false);
     println!("{}", monkey_business(&inspections));
 }
