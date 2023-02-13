@@ -403,7 +403,7 @@ fn monkey_business(inspections: &[usize]) -> usize {
 fn main() {
     let mut scanner = Scanner::lazy(std::io::stdin().lines().map(|l|l.unwrap()));
     let mut monkeys = parse_input(&mut scanner).unwrap();
-    let mut inspections = Monkey::simulate(&mut monkeys.clone(), 20, true);
+    let inspections = Monkey::simulate(&mut monkeys.clone(), 20, true);
     println!("{}", monkey_business(&inspections));
 
     let inspections = Monkey::simulate(&mut monkeys, 10_000, false);

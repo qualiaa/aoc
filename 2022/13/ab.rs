@@ -1,6 +1,6 @@
 use std::cmp::Ordering::{self,*};
+use std::str::FromStr;
 use std::iter::FromIterator;
-use std::io::Read;
 
 #[derive(Clone, Debug)]
 enum Element {
@@ -15,6 +15,16 @@ impl Element {
     }
 }
 
+impl FromStr for Element {
+    type Err = ();
+    fn from_str(input: &str) -> Result<Self, ()>{
+        if input.starts_with('[') {
+            Ok(parse_list(&mut input[1..].chars()))
+        } else {
+            Err(())
+        }
+    }
+}
 
 impl PartialEq for Element {
     fn eq(&self, other: &Self) -> bool {
@@ -75,15 +85,11 @@ fn parse_list(input: &mut impl Iterator<Item=char>) -> Element {
 }
 
 fn main() {
-    let mut input = String::new();
-    std::io::stdin().read_to_string(&mut input).unwrap();
-    let mut input = input.chars();
-    let mut packets = Vec::new();
-    while let Some(c) = input.next() {
-        if c == '[' {
-            packets.push(parse_list(&mut input));
-        }
-    }
+    let mut packets: Vec<Element> = std::io::stdin().lines()
+        .filter_map(Result::ok)
+        .filter_map(|l| l.parse().ok())
+        .collect();
+
     let mut sum: usize = 0;
     for i in 0..packets.len()/2 {
         if packets[i*2] < packets[i*2+1] {
@@ -92,8 +98,8 @@ fn main() {
     }
     println!("{}", sum);
 
-    let divider_a = Element::singleton(Element::singleton(Number(2)));
-    let divider_b = Element::singleton(Element::singleton(Number(6)));
+    let divider_a: Element = "[[2]]".parse().unwrap();
+    let divider_b: Element = "[[6]]".parse().unwrap();
     packets.push(divider_a.clone());
     packets.push(divider_b.clone());
     packets.sort();

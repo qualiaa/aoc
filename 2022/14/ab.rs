@@ -1,6 +1,5 @@
-use std::cmp::{PartialOrd, Ord, Ordering};
 use std::ops::{Add, RangeInclusive};
-use std::collections::{BinaryHeap,HashMap};
+use std::collections::{HashMap};
 
 #[derive(PartialEq, Eq)]
 enum Tile {
@@ -22,18 +21,6 @@ impl Add for &Coord {
     }
 }
 
-impl PartialOrd for Coord {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-
-}
-impl Ord for Coord {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.1.cmp(&other.1)
-    }
-}
-
 type Map = HashMap::<Coord, Tile>;
 
 fn parse_line(l: &str) -> Result<Vec<Coord>, String>  {
@@ -52,12 +39,12 @@ fn ordered_range(x: isize, y: isize) -> RangeInclusive<isize> {
     if x < y {x..=y} else {y..=x}
 }
 
-fn run(mut map: &mut Map, mut active_sand: &mut BinaryHeap<Coord>, bottom: isize, end_condition: impl Fn(Coord) -> bool) {
-    fn come_to_rest(map: &mut Map, q: &mut BinaryHeap<Coord>) {
-        map.insert(q.pop().unwrap(), Sand);
+fn run(mut map: &mut Map, mut active_sand: &mut Vec<Coord>, bottom: isize, end_condition: impl Fn(Coord) -> bool) {
+    fn come_to_rest(map: &mut Map, pending: &mut Vec<Coord>) {
+        map.insert(pending.pop().unwrap(), Sand);
     }
 
-    while let Some(current) = active_sand.peek() {
+    while let Some(current) = active_sand.last() {
         match next_position(&map, &current) {
             Some(end_point) if end_condition(end_point) => break,
             Some(floor) if floor.1 == bottom+2
@@ -86,8 +73,8 @@ fn main() {
                 next
             });
     }
-    let bottom = map.keys().max().unwrap().1;
-    let mut active_sand = BinaryHeap::from([START]);
+    let bottom = map.keys().map(|x| x.1).max().unwrap();
+    let mut active_sand = Vec::from([START]);
     run(&mut map, &mut active_sand, bottom, |p| p.1 >= bottom);
     println!("{}", count_sand(&map));
 
