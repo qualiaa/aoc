@@ -89,14 +89,13 @@ fn plane(x0: isize, x1: isize, y0: isize, y1: isize) -> impl Iterator<Item=(isiz
 }
 
 fn make_frontier(shape: &Occupancy, min: Coord, max: Coord) -> Occupancy {
-    plane(min.0, max.0, min.1, max.1).flat_map(|(x, y)| {
-        IntoIterator::into_iter([Coord(x, y, min.2), Coord(x, y, max.2)])})
-        .chain(plane(min.0, max.0, min.2, max.2).flat_map(|(x, z)| {
-            IntoIterator::into_iter([Coord(x, min.1, z), Coord(x, max.1, z)])}))
-        .chain(plane(min.1, max.1, min.2, max.2).flat_map(|(y, z)| {
-            IntoIterator::into_iter([Coord(min.0, y, z), Coord(max.0, y, z)])}))
-        .filter(|p| !shape.contains(p))
-        .collect()
+    let xy = plane(min.0, max.0, min.1, max.1).flat_map(|(x, y)| {
+        IntoIterator::into_iter([Coord(x, y, min.2), Coord(x, y, max.2)])});
+    let xz = plane(min.0, max.0, min.2, max.2).flat_map(|(x, z)| {
+        IntoIterator::into_iter([Coord(x, min.1, z), Coord(x, max.1, z)])});
+    let yz = plane(min.1, max.1, min.2, max.2).flat_map(|(y, z)| {
+        IntoIterator::into_iter([Coord(min.0, y, z), Coord(max.0, y, z)])});
+    xy.chain(xz).chain(yz).filter(|p| !shape.contains(p)).collect()
 }
 
 fn fill_exterior(mut shape: Occupancy) -> Occupancy {
