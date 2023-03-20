@@ -53,14 +53,16 @@ struct Map {
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
 enum Direction {East, South, West, North}
 use Direction::*;
+
 #[derive(Copy, Clone)]
 enum Rotation {CCW = -1, CW = 1}
+
 enum Instruction {
     Turn(Rotation),
     Move(usize)
 }
-impl Coord {
 
+impl Coord {
     fn max(&self, other: &Coord) -> Coord {
         Coord(self.0.max(other.0),
               self.1.max(other.1))
@@ -196,9 +198,6 @@ fn main() {
     let instructions = parse_instructions(&lines.pop().unwrap());
     let map = Map::from_lines(lines.into_iter());
 
-    let mut pose = map.initial_pose();
-    for instruction in instructions {
-        pose = instruction.execute(pose, &map);
-    }
-    println!("{}", password(pose));
+    let final_pose = instructions.into_iter().fold(map.initial_pose(), |p, i| i.execute(p, &map));
+    println!("{}", password(final_pose));
 }
