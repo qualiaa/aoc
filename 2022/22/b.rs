@@ -1,5 +1,7 @@
-use std::collections::{VecDeque, HashMap, HashSet};
-use std::ops::{Add, AddAssign, Deref};
+#![feature(generic_const_exprs)]
+
+use std::collections::{HashMap, HashSet};
+use std::ops::{Add, AddAssign, Index, IndexMut, Mul, Deref};
 use std::mem::{self, MaybeUninit};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -92,8 +94,8 @@ fn modulo(x: isize, y: isize) -> isize {
 
 impl Direction {
     fn rotate(&self, rot: Rotation) -> Direction {
-        rotation = modulo(rot as isize, *self as isize);
-        Direction::DIRECTIONS[Direction::DIRECTIONS.len() - rotation]
+        let rot = modulo(rot as isize, *self as isize);
+        Direction::DIRECTIONS[Direction::DIRECTIONS.len() - rot]
     }
 
     const DIRECTIONS: [Direction; 4] = [East, North, West, South]; // order matters
@@ -221,10 +223,12 @@ fn find_faces(map: CharGrid, tile_size: usize) -> HashSet<Coord> {
 }
 
 #[derive(Default)]
-struct Mat<T, const M: usize, const N: usize>([usize; N * M]);
+struct Mat<T, const M: usize, const N: usize> ([T; M * N]) where [T; M * N]: Sized;
 
-impl Mat<T, M, N> {
-    fn new(data: [T; M*N]) {
+impl<T, const M: usize, const N: usize> Mat<T, M, N>
+    where [T; M*N]: Sized,
+          [T; N*M]: Sized {
+    fn new(data: [T; M*N]) -> Self {
         Mat(data)
     }
 
@@ -234,8 +238,8 @@ impl Mat<T, M, N> {
         })
     }
 
-    fn transpose() -> Mat<T, N, M> {
-        let mut mat = Mat<T, N, M>::empty();
+    fn transpose(&self) -> Mat<T, N, M> {
+        let mut mat = Mat::empty();
 
         for i in 0..M {
             for j in 0..N {
@@ -246,13 +250,16 @@ impl Mat<T, M, N> {
     }
 }
 
-impl Mat<T, M, N> where T: Default {
+impl<T, const M: usize, const N: usize> Mat<T, M, N>
+    where T: Default,
+          [T; M*N]: Sized {
     fn default() -> Self {
         Mat([Default::default(); M*N])
     }
 }
 
-impl Mat<isize, M, M> {
+impl<const M: usize> Mat<isize, M, M>
+    where [isize; M*M]: Sized {
     fn identity() -> Self {
         let mut mat = Self::zero();
         for i in 0..M {
@@ -262,14 +269,18 @@ impl Mat<isize, M, M> {
     }
 }
 
-impl Mat<T, M, N> where T: AddAssign, Mul, Default {
-    fn mul<const Q: usize>(rhs: Mat<T, N, Q>) -> Mat<T, M, Q> {
+impl<T, const N: usize, const M: usize, const Q: usize> Mul<Mat<T, N, Q>> for &Mat<T, M, N>
+    where T: AddAssign + Mul + Default,
+          [T; M*N]: Sized,
+          [T; N*Q]: Sized {
+    type Output = Mat<T, N, Q>;
+    fn mul(self, rhs: Mat<T, N, Q>) -> Self::Output {
         let mut mat = Self::empty();
         for m in 0..M {
             for q in 0..Q {
                 let mut sum = Default::default();
                 for n in 0..N {
-                    sum += self[m, n] * rhs[n, q];
+                    sum += self[(m, n)] * rhs[(n, q)];
                 }
                 mat.write((m, q), sum);
             }
@@ -278,7 +289,7 @@ impl Mat<T, M, N> where T: AddAssign, Mul, Default {
     }
 }
 
-impl Mat<T, 3, 3> where T: Add, Mul {
+impl<T> Mat<T, 3, 3> where T: Add + Mul {
     fn cross(x: (T, T, T)) -> Self {
         Mat([0, -x.2, x.1,
              x.2, 0, -x.0,
@@ -286,7 +297,8 @@ impl Mat<T, 3, 3> where T: Add, Mul {
     }
 }
 
-impl Mat<MaybeUninit<T>, M, N> {
+impl<T, const M: usize, const N: usize> Mat<MaybeUninit<T>, M, N>
+    where [MaybeUninit<T>; M * N]: Sized {
     unsafe fn assume_init(self) -> Mat<T, M, N> {
         Mat(unsafe {
             mem::transmute::<_, [T; M*N]>(self.0)
@@ -298,7 +310,7 @@ impl Mat<MaybeUninit<T>, M, N> {
     }
 }
 
-impl Mat<T, 2, 1> {
+impl<T> Mat<T, 2, 1> {
     fn from_tuple(data: (T, T)) -> Self {
         Mat([data.0, data.1])
     }
@@ -308,7 +320,7 @@ impl Mat<T, 2, 1> {
     }
 }
 
-impl Mat<T, 3, 1> {
+impl<T> Mat<T, 3, 1> {
     fn from_tuple(data: (T, T, T)) -> Self {
         Mat([data.0, data.1, data.2])
     }
@@ -318,21 +330,22 @@ impl Mat<T, 3, 1> {
     }
 }
 
-impl<I> Index<(usize, usize)> for Mat<T, M, N> {
+impl<T, const M: usize, const N: usize> Index<(usize, usize)> for Mat<T, M, N>
+    where [T; M * N]: Sized {
     type Output = T;
     fn index(&self, index: (usize, usize)) -> &Self::Output {
         self.0[index.0 * N + index.1]
     }
 }
 
-impl<I> IndexMut<(usize, usize> for Mat<T, M, N>)> {
-    type Output = T;
+impl<T, const M: usize, const N: usize> IndexMut<(usize, usize)> for Mat<T, M, N>
+    where [T; M * N]: Sized {
     fn index_mut(&mut self, index: (usize, usize)) -> &mut Self::Output {
         self.0[index.0 * N + index.1]
     }
 }
 
-fn cross<T: Mul, Add>(a: (T, T, T), b: (T, T, T>)) -> (T, T, T) {
+fn cross<T: Mul + Add>(a: (T, T, T), b: (T, T, T)) -> (T, T, T) {
     (a.1 * b.2 - a.2 * b.1,
      a.2 * b.0 - a.0 * b.2,
      a.0 * b.1 - a.1 * b.0)
@@ -342,8 +355,8 @@ fn cubify(face_coords: HashSet<Coord>) -> HashMap<(Coord, Direction), (Coord, Di
     // First, fold face_coords into 3D coordinates
     // (we take the first coord we get out of the set to be (0, 0, 0))
     type Coord3D = (isize, isize, isize);
-    let mut faces = HashMap<Coord, Coord3D>;
-    let mut edges = HashMap<(Coord, Direction), Coord3D>;
+    let mut faces: HashMap<Coord, Coord3D>= HashMap::new();
+    let mut edges: HashMap<(Coord, Direction), Coord3D> = HashMap::new();
 
     let face_coord = face_coords.iter().next().unwrap();
 }
