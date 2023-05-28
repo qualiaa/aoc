@@ -1,11 +1,12 @@
+#![feature(let_chains)]
 #![feature(generic_const_exprs)]
 #![feature(maybe_uninit_array_assume_init)]
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::ops::{Add, AddAssign, Index, IndexMut, Mul, Neg, Sub, Deref};
 use std::mem::{MaybeUninit};
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct Coord(isize, isize);
 impl Add<Self> for Coord {
     type Output = Self;
@@ -67,11 +68,6 @@ enum Instruction {
 }
 
 impl Coord {
-    fn max(&self, other: &Coord) -> Coord {
-        Coord(self.0.max(other.0),
-              self.1.max(other.1))
-    }
-
     const MIN: Coord = Coord(isize::MIN, isize::MIN);
 
     fn from_direction(d: &Direction) -> Coord {
@@ -85,6 +81,10 @@ impl Coord {
 
     fn neighbours<'a>(&'a self) -> impl Iterator<Item=Coord> + 'a {
         Direction::DIRECTIONS.iter().map(Coord::from_direction).map(move |d| self + d)
+    }
+
+    fn to_tuple(&self) -> (isize, isize) {
+        (self.0, self.1)
     }
 }
 
@@ -129,7 +129,7 @@ type CharGrid = Vec<Vec<char>>;
 
 impl Map {
     fn new(map: HashMap<Coord, Tile>) -> Self {
-        let max = map.keys().fold(Coord::MIN, |c0, c1| c0.max(c1));
+        let max = map.keys().fold(Coord::MIN, |c0, c1| c0.max(c1.clone())); // clone here from derived Ord, should fix it but I've suffered enough
         Map { map, max }
     }
 
@@ -328,7 +328,28 @@ impl<T: Copy> Mat<T, 2, 1> {
     }
 }
 
+impl<T: Copy> Mat<T, 1, 2> {
+    fn from_tuple(data: (T, T)) -> Self {
+        Mat([data.0, data.1])
+    }
+
+    fn to_tuple(self) -> (T, T) {
+        (self.0[0], self.0[1])
+    }
+}
+
+
 impl<T: Copy> Mat<T, 3, 1> {
+    fn from_tuple(data: (T, T, T)) -> Self {
+        Mat([data.0, data.1, data.2])
+    }
+
+    fn to_tuple(self) -> (T, T, T) {
+        (self.0[0], self.0[1], self.0[2])
+    }
+}
+
+impl<T: Copy> Mat<T, 1, 3> {
     fn from_tuple(data: (T, T, T)) -> Self {
         Mat([data.0, data.1, data.2])
     }
@@ -361,13 +382,59 @@ where T: Mul<Output=T> + Sub<Output=T> + Copy {
 }
 
 fn cubify(face_coords: HashSet<Coord>) -> HashMap<(Coord, Direction), (Coord, Direction)> {
-    // First, fold face_coords into 3D coordinates
-    // (we take the first coord we get out of the set to be (0, 0, 0))
-    type Coord3D = (isize, isize, isize);
-    let mut faces: HashMap<Coord, Coord3D>= HashMap::new();
-    let mut edges: HashMap<(Coord, Direction), Coord3D> = HashMap::new();
+    type V3 = (isize, isize, isize);
+    let first_face = face_coords.iter().next().unwrap();
+    let mut frontier: BTreeSet<&Coord> = BTreeSet::from([first_face]);
+    let mut normals: HashMap<&Coord, V3> = HashMap::from([
+        (first_face, (0, 0, 1))
+    ]);
+    let mut bases: HashMap<&Coord, Mat<isize, 2, 3>> = HashMap::from([
+        (first_face, Mat([1, 0, 0,
+                          0, 1, 0]))
+    ]);
 
-    let face_coord = face_coords.iter().next().unwrap();
+    let mut adjacent_normals: HashMap<&Coord, HashMap<Direction, V3>> = HashMap::new();
+
+    while let Some(face) = frontier.pop_first() {
+        let normal = normals[&face];
+        let basis = bases[&face];
+
+        adjacent_normals.insert(&face, HashMap::new());
+
+        for dir in Direction::DIRECTIONS.iter().copied() {
+            let delta2d = Coord::from_direction(&dir);
+            let delta3d: V3 = (Mat::<_, 1, 2>::from_tuple(delta2d.to_tuple()) * basis).to_tuple();
+            adjacent_normals[face].insert(dir, delta3d);
+
+            let new_face = face + delta2d;
+            if let Some(new_face) = face_coords.get(&new_face) && !bases.contains_key(&new_face) {
+                // 90 degree rotation of basis performed with Rodriguez' formula
+                let i = Mat::<isize, 3, 3>::identity();
+                let a = Mat::cross(cross(normal, delta3d));
+                bases.insert(new_face, basis * (i + a + a*a).transpose());
+                normals.insert(new_face, delta3d);
+                frontier.insert(&new_face);
+            }
+        }
+    }
+
+    // Invert the maps for reverse lookup
+    let adjacent_dirs: HashMap<&Coord, HashMap<V3, Direction>> =
+        adjacent_normals.iter().map(|(k, v)| {
+            (*k, v.iter().map(|(k, v)| (*v, *k)).collect())
+        }).collect();
+    let faces: HashMap<V3, &Coord> = normals.iter().map(|(k, v)| (*v, *k)).collect();
+
+    let mut resolved_edges: HashMap<(Coord, Direction), (Coord, Direction)> = HashMap::new();
+    for (face_a, dirs) in adjacent_normals.into_iter() {
+        let normal_a = normals[face_a];
+        for (dir_a, normal_b) in dirs.into_iter() {
+            let face_b = faces[&normal_b];
+            let dir_b = adjacent_dirs[face_b][&normal_a];
+            resolved_edges.insert((face_a.clone(), dir_a), (face_b.clone(), dir_b));
+        }
+    }
+    resolved_edges
 }
 
 fn main() {
