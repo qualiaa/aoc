@@ -4,7 +4,7 @@
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::ops::{Add, AddAssign, Index, IndexMut, Mul, Neg, Sub, Deref};
-use std::mem::{MaybeUninit};
+use std::mem::MaybeUninit;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct Coord(isize, isize);
@@ -271,14 +271,56 @@ where [isize; M*M]: Sized {
     }
 }
 
-impl<T, const M: usize, const N: usize, const Q: usize> Mul<Mat<T, N, Q>> for &Mat<T, M, N>
-where T: AddAssign + Default,
-      for<'a> &'a T: Mul<Output=T>,
-      [T; M*N]: Sized,
-      [T; N*Q]: Sized {
-    type Output = Mat<T, N, Q>;
+// MUL
+// Mat * Mat
+impl<T, const M: usize, const N: usize, const Q: usize> Mul<Mat<T, N, Q>> for Mat<T, M, N>
+where T: AddAssign + Default + Copy,
+for<'a, 'b> &'a T: Mul<&'b T, Output=T>,  // Should try to align this with parent Mul?
+[T; M*N]: Sized,
+[T; N*Q]: Sized,
+[T; M*Q]: Sized {
+    type Output = Mat<T, M, Q>;
     fn mul(self, rhs: Mat<T, N, Q>) -> Self::Output {
-        let mut mat = Mat::<T, N, Q>::empty();
+        &self * &rhs
+    }
+}
+
+// Mat * &Mat
+impl<T, const M: usize, const N: usize, const Q: usize> Mul<&Mat<T, N, Q>> for Mat<T, M, N>
+where T: AddAssign + Default + Copy,
+      for<'a, 'b> &'a T: Mul<&'b T, Output=T>,  // Should try to align this with parent Mul?
+      [T; M*N]: Sized,
+      [T; N*Q]: Sized,
+      [T; M*Q]: Sized {
+    type Output = Mat<T, M, Q>;
+    fn mul(self, rhs: &Mat<T, N, Q>) -> Self::Output {
+        &self * rhs
+    }
+}
+
+// &Mat * Mat
+impl<'a, T, const M: usize, const N: usize, const Q: usize> Mul<Mat<T, N, Q>> for &'a Mat<T, M, N>
+where T: AddAssign + Default + Copy,
+      for<'b, 'c> &'c T: Mul<&'b T, Output=T>,  // Should try to align this with parent Mul?
+      [T; M*N]: Sized,
+      [T; N*Q]: Sized,
+      [T; M*Q]: Sized {
+    type Output = Mat<T, M, Q>;
+    fn mul(self, rhs: Mat<T, N, Q>) -> Self::Output {
+        self * &rhs
+    }
+}
+
+// &Mat * &Mat
+impl<'a, T, const M: usize, const N: usize, const Q: usize> Mul<&'a Mat<T, N, Q>> for &'a Mat<T, M, N>
+where T: AddAssign + Default + Copy,
+      for<'b> &'a T: Mul<&'b T, Output=T>,
+      [T; M*N]: Sized,
+      [T; N*Q]: Sized,
+      [T; M*Q]: Sized {
+    type Output = Mat<T, M, Q>;
+    fn mul(self, rhs: &Mat<T, N, Q>) -> Self::Output {
+        let mut mat = Mat::<T, M, Q>::empty();
         for m in 0..M {
             for q in 0..Q {
                 let mut sum = Default::default();
@@ -289,6 +331,49 @@ where T: AddAssign + Default,
             }
         }
         unsafe {mat.assume_init()}
+    }
+}
+
+// ADD ASSIGN
+impl<T, const M: usize, const N: usize> AddAssign<&Self> for Mat<T, M, N>
+where [T; M*N]: Sized,
+      for<'a> T: AddAssign<&'a T> {
+    fn add_assign(&mut self, rhs: &Self) {
+        for m in 0..M {
+            for n in 0..N {
+                self[(m, n)] += &rhs[(m, n)];
+            }
+        }
+    }
+}
+
+impl<T, const M: usize, const N: usize> AddAssign for Mat<T, M, N>
+where [T; M*N]: Sized,
+      T: AddAssign {
+    fn add_assign(&mut self, rhs: Self) {
+        std::iter::IntoIterator::into_iter(rhs.0)
+            .enumerate()
+            .for_each(move |(i, x)| {self.0[i] += x;})
+    }
+}
+
+// ADD
+impl<T, const M: usize, const N: usize> Add<&Self> for Mat<T, M, N>
+where [T; M*N]: Sized,
+      for <'a> T: AddAssign<&'a T> {
+    type Output = Self;
+    fn add(mut self, rhs: &Self) -> Self::Output {
+        self += rhs;
+        self
+    }
+}
+
+impl<T, const M: usize, const N: usize> Add for Mat<T, M, N>
+where [T; M*N]: Sized,
+      for <'a> T: AddAssign<&'a T> {
+    type Output = Self;
+    fn add(self, rhs: Self) -> Self::Output {
+        self + &rhs
     }
 }
 
@@ -397,21 +482,23 @@ fn cubify(face_coords: HashSet<Coord>) -> HashMap<(Coord, Direction), (Coord, Di
 
     while let Some(face) = frontier.pop_first() {
         let normal = normals[&face];
-        let basis = bases[&face];
+        // TODO Use Rc here
+        let basis = bases.remove(face).unwrap();
 
         adjacent_normals.insert(&face, HashMap::new());
 
         for dir in Direction::DIRECTIONS.iter().copied() {
             let delta2d = Coord::from_direction(&dir);
-            let delta3d: V3 = (Mat::<_, 1, 2>::from_tuple(delta2d.to_tuple()) * basis).to_tuple();
-            adjacent_normals[face].insert(dir, delta3d);
+            let delta3d: V3 = (Mat::<_, 1, 2>::from_tuple(delta2d.to_tuple()) * &basis).to_tuple();
+            adjacent_normals.get_mut(face).map(
+                |normals| normals.insert(dir, delta3d));
 
             let new_face = face + delta2d;
             if let Some(new_face) = face_coords.get(&new_face) && !bases.contains_key(&new_face) {
                 // 90 degree rotation of basis performed with Rodriguez' formula
                 let i = Mat::<isize, 3, 3>::identity();
                 let a = Mat::cross(cross(normal, delta3d));
-                bases.insert(new_face, basis * (i + a + a*a).transpose());
+                bases.insert(new_face, &basis * (i + &a*&a + a).transpose());
                 normals.insert(new_face, delta3d);
                 frontier.insert(&new_face);
             }
