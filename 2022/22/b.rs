@@ -3,8 +3,9 @@
 #![feature(maybe_uninit_array_assume_init)]
 
 use std::collections::{BTreeSet, HashMap, HashSet};
-use std::ops::{Add, AddAssign, Index, IndexMut, Mul, Neg, Sub, Deref};
 use std::mem::MaybeUninit;
+use std::ops::{Add, AddAssign, Index, IndexMut, Mul, Neg, Sub, Deref};
+use std::rc::Rc;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct Coord(isize, isize);
@@ -473,23 +474,22 @@ fn cubify(face_coords: HashSet<Coord>) -> HashMap<(Coord, Direction), (Coord, Di
     let mut normals: HashMap<&Coord, V3> = HashMap::from([
         (first_face, (0, 0, 1))
     ]);
-    let mut bases: HashMap<&Coord, Mat<isize, 2, 3>> = HashMap::from([
-        (first_face, Mat([1, 0, 0,
-                          0, 1, 0]))
+    let mut bases: HashMap<&Coord, Rc<Mat<isize, 2, 3>>> = HashMap::from([
+        (first_face, Rc::new(Mat([1, 0, 0,
+                                  0, 1, 0])))
     ]);
 
     let mut adjacent_normals: HashMap<&Coord, HashMap<Direction, V3>> = HashMap::new();
 
     while let Some(face) = frontier.pop_first() {
         let normal = normals[&face];
-        // TODO Use Rc here
-        let basis = bases.remove(face).unwrap();
+        let basis = Rc::clone(bases.get(face).unwrap());
 
         adjacent_normals.insert(&face, HashMap::new());
 
         for dir in Direction::DIRECTIONS.iter().copied() {
             let delta2d = Coord::from_direction(&dir);
-            let delta3d: V3 = (Mat::<_, 1, 2>::from_tuple(delta2d.to_tuple()) * &basis).to_tuple();
+            let delta3d: V3 = (Mat::<_, 1, 2>::from_tuple(delta2d.to_tuple()) * basis.deref()).to_tuple();
             adjacent_normals.get_mut(face).map(
                 |normals| normals.insert(dir, delta3d));
 
@@ -498,7 +498,13 @@ fn cubify(face_coords: HashSet<Coord>) -> HashMap<(Coord, Direction), (Coord, Di
                 // 90 degree rotation of basis performed with Rodriguez' formula
                 let i = Mat::<isize, 3, 3>::identity();
                 let a = Mat::cross(cross(normal, delta3d));
-                bases.insert(new_face, &basis * (i + &a*&a + a).transpose());
+                // It seems deref coercion doesn't work for &basis here - I
+                // guess that deref coercion requires the target function and
+                // its signature to be known a priori in order to figure that &T
+                // is a valid substitution for invalid &Rc<T>; it cannot use the
+                // non-existence of &Rc<T>.mul to trigger a search for &T.mul.
+                let new_basis = basis.deref() * (i + &a*&a + a).transpose();
+                bases.insert(new_face, Rc::new(new_basis));
                 normals.insert(new_face, delta3d);
                 frontier.insert(&new_face);
             }
