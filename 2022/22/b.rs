@@ -312,248 +312,255 @@ fn find_faces(map: CharGrid, face_size: usize) -> HashMap<Coord, Face> {
     faces
 }
 
-struct Mat<T, const M: usize, const N: usize> ([T; M * N]) where [T; M * N]: Sized;
+mod mat {
+    use std::mem::MaybeUninit;
+    use std::ops::{Add, AddAssign, Index, IndexMut, Mul, Neg, Sub};
 
-impl<T, const M: usize, const N: usize> Mat<T, M, N>
-where [T; M*N]: Sized {
-    fn new(data: [T; M*N]) -> Self {
-        Mat(data)
-    }
+    pub struct Mat<T, const M: usize, const N: usize> ([T; M * N]) where [T; M * N]: Sized;
 
-    fn empty() -> Mat<MaybeUninit<T>, M, N> {
-        Mat(unsafe {
-            MaybeUninit::uninit().assume_init()
-        })
-    }
-}
-
-impl<T, const M: usize, const N: usize> Mat<T, M, N>
-where [T; M*N]: Sized, [T; N*M]: Sized, T: Copy {
-    fn transpose(&self) -> Mat<T, N, M> {
-        let mut mat = Mat::<T, N, M>::empty();
-
-        for i in 0..M {
-            for j in 0..N {
-                mat.write((i, j), self[(j, i)]);
-            }
+    impl<T, const M: usize, const N: usize> Mat<T, M, N>
+    where [T; M*N]: Sized {
+        pub fn new(data: [T; M*N]) -> Self {
+            Mat(data)
         }
-        unsafe {mat.assume_init()}
-    }
-}
 
-impl<T, const M: usize, const N: usize> Default for Mat<T, M, N>
-where T: Default + Copy, // Copy shouldn't be necessary here but looks like Default for [x;N] only works for N<32
-          [T; M*N]: Sized {
-    fn default() -> Self {
-        Mat([Default::default(); M*N])
-    }
-}
-
-impl<const M: usize> Mat<isize, M, M>
-where [isize; M*M]: Sized {
-    fn identity() -> Self {
-        let mut mat = Mat::<isize, M, M>::default();
-        for i in 0..M {
-            mat[(i, i)] = 1;
+        pub fn empty() -> Mat<MaybeUninit<T>, M, N> {
+            Mat(unsafe {
+                MaybeUninit::uninit().assume_init()
+            })
         }
-        mat
     }
-}
 
-// MUL
-// Mat * Mat
-impl<T, const M: usize, const N: usize, const Q: usize> Mul<Mat<T, N, Q>> for Mat<T, M, N>
-where T: AddAssign + Default + Copy,
-for<'a, 'b> &'a T: Mul<&'b T, Output=T>,  // Should try to align this with parent Mul?
-[T; M*N]: Sized,
-[T; N*Q]: Sized,
-[T; M*Q]: Sized {
-    type Output = Mat<T, M, Q>;
-    fn mul(self, rhs: Mat<T, N, Q>) -> Self::Output {
-        &self * &rhs
-    }
-}
+    impl<T, const M: usize, const N: usize> Mat<T, M, N>
+    where [T; M*N]: Sized, [T; N*M]: Sized, T: Copy {
+        pub fn transpose(&self) -> Mat<T, N, M> {
+            let mut mat = Mat::<T, N, M>::empty();
 
-// Mat * &Mat
-impl<T, const M: usize, const N: usize, const Q: usize> Mul<&Mat<T, N, Q>> for Mat<T, M, N>
-where T: AddAssign + Default + Copy,
-      for<'a, 'b> &'a T: Mul<&'b T, Output=T>,  // Should try to align this with parent Mul?
-      [T; M*N]: Sized,
-      [T; N*Q]: Sized,
-      [T; M*Q]: Sized {
-    type Output = Mat<T, M, Q>;
-    fn mul(self, rhs: &Mat<T, N, Q>) -> Self::Output {
-        &self * rhs
-    }
-}
-
-// &Mat * Mat
-impl<'a, T, const M: usize, const N: usize, const Q: usize> Mul<Mat<T, N, Q>> for &'a Mat<T, M, N>
-where T: AddAssign + Default + Copy,
-      for<'b, 'c> &'c T: Mul<&'b T, Output=T>,  // Should try to align this with parent Mul?
-      [T; M*N]: Sized,
-      [T; N*Q]: Sized,
-      [T; M*Q]: Sized {
-    type Output = Mat<T, M, Q>;
-    fn mul(self, rhs: Mat<T, N, Q>) -> Self::Output {
-        self * &rhs
-    }
-}
-
-// &Mat * &Mat
-impl<'a, T, const M: usize, const N: usize, const Q: usize> Mul<&'a Mat<T, N, Q>> for &'a Mat<T, M, N>
-where T: AddAssign + Default + Copy,
-      for<'b> &'a T: Mul<&'b T, Output=T>,
-      [T; M*N]: Sized,
-      [T; N*Q]: Sized,
-      [T; M*Q]: Sized {
-    type Output = Mat<T, M, Q>;
-    fn mul(self, rhs: &Mat<T, N, Q>) -> Self::Output {
-        let mut mat = Mat::<T, M, Q>::empty();
-        for m in 0..M {
-            for q in 0..Q {
-                let mut sum = Default::default();
-                for n in 0..N {
-                    sum += &self[(m, n)] * &rhs[(n, q)];
+            for i in 0..M {
+                for j in 0..N {
+                    mat.write((i, j), self[(j, i)]);
                 }
-                mat.write((m, q), sum);
             }
-        }
-        unsafe {mat.assume_init()}
-    }
-}
-
-// ADD ASSIGN
-impl<T, const M: usize, const N: usize> AddAssign<&Self> for Mat<T, M, N>
-where [T; M*N]: Sized,
-      for<'a> T: AddAssign<&'a T> {
-    fn add_assign(&mut self, rhs: &Self) {
-        for m in 0..M {
-            for n in 0..N {
-                self[(m, n)] += &rhs[(m, n)];
-            }
+            unsafe {mat.assume_init()}
         }
     }
-}
 
-impl<T, const M: usize, const N: usize> AddAssign for Mat<T, M, N>
-where [T; M*N]: Sized,
-      T: AddAssign {
-    fn add_assign(&mut self, rhs: Self) {
-        std::iter::IntoIterator::into_iter(rhs.0)
-            .enumerate()
-            .for_each(move |(i, x)| {self.0[i] += x;})
+    impl<T, const M: usize, const N: usize> Default for Mat<T, M, N>
+    where T: Default + Copy, // Copy shouldn't be necessary here but looks like Default for [x;N] only works for N<32
+            [T; M*N]: Sized {
+        fn default() -> Self {
+            Mat([Default::default(); M*N])
+        }
+    }
+
+    impl<const M: usize> Mat<isize, M, M>
+    where [isize; M*M]: Sized {
+        pub fn identity() -> Self {
+            let mut mat = Mat::<isize, M, M>::default();
+            for i in 0..M {
+                mat[(i, i)] = 1;
+            }
+            mat
+        }
+    }
+
+    // MUL
+    // Mat * Mat
+    impl<T, const M: usize, const N: usize, const Q: usize> Mul<Mat<T, N, Q>> for Mat<T, M, N>
+    where T: AddAssign + Default + Copy,
+    for<'a, 'b> &'a T: Mul<&'b T, Output=T>,  // Should try to align this with parent Mul?
+    [T; M*N]: Sized,
+    [T; N*Q]: Sized,
+    [T; M*Q]: Sized {
+        type Output = Mat<T, M, Q>;
+        fn mul(self, rhs: Mat<T, N, Q>) -> Self::Output {
+            &self * &rhs
+        }
+    }
+
+    // Mat * &Mat
+    impl<T, const M: usize, const N: usize, const Q: usize> Mul<&Mat<T, N, Q>> for Mat<T, M, N>
+    where T: AddAssign + Default + Copy,
+        for<'a, 'b> &'a T: Mul<&'b T, Output=T>,  // Should try to align this with parent Mul?
+        [T; M*N]: Sized,
+        [T; N*Q]: Sized,
+        [T; M*Q]: Sized {
+        type Output = Mat<T, M, Q>;
+        fn mul(self, rhs: &Mat<T, N, Q>) -> Self::Output {
+            &self * rhs
+        }
+    }
+
+    // &Mat * Mat
+    impl<'a, T, const M: usize, const N: usize, const Q: usize> Mul<Mat<T, N, Q>> for &'a Mat<T, M, N>
+    where T: AddAssign + Default + Copy,
+        for<'b, 'c> &'c T: Mul<&'b T, Output=T>,  // Should try to align this with parent Mul?
+        [T; M*N]: Sized,
+        [T; N*Q]: Sized,
+        [T; M*Q]: Sized {
+        type Output = Mat<T, M, Q>;
+        fn mul(self, rhs: Mat<T, N, Q>) -> Self::Output {
+            self * &rhs
+        }
+    }
+
+    // &Mat * &Mat
+    impl<'a, T, const M: usize, const N: usize, const Q: usize> Mul<&'a Mat<T, N, Q>> for &'a Mat<T, M, N>
+    where T: AddAssign + Default + Copy,
+        for<'b> &'a T: Mul<&'b T, Output=T>,
+        [T; M*N]: Sized,
+        [T; N*Q]: Sized,
+        [T; M*Q]: Sized {
+        type Output = Mat<T, M, Q>;
+        fn mul(self, rhs: &Mat<T, N, Q>) -> Self::Output {
+            let mut mat = Mat::<T, M, Q>::empty();
+            for m in 0..M {
+                for q in 0..Q {
+                    let mut sum = Default::default();
+                    for n in 0..N {
+                        sum += &self[(m, n)] * &rhs[(n, q)];
+                    }
+                    mat.write((m, q), sum);
+                }
+            }
+            unsafe {mat.assume_init()}
+        }
+    }
+
+    // ADD ASSIGN
+    impl<T, const M: usize, const N: usize> AddAssign<&Self> for Mat<T, M, N>
+    where [T; M*N]: Sized,
+        for<'a> T: AddAssign<&'a T> {
+        fn add_assign(&mut self, rhs: &Self) {
+            for m in 0..M {
+                for n in 0..N {
+                    self[(m, n)] += &rhs[(m, n)];
+                }
+            }
+        }
+    }
+
+    impl<T, const M: usize, const N: usize> AddAssign for Mat<T, M, N>
+    where [T; M*N]: Sized,
+        T: AddAssign {
+        fn add_assign(&mut self, rhs: Self) {
+            std::iter::IntoIterator::into_iter(rhs.0)
+                .enumerate()
+                .for_each(move |(i, x)| {self.0[i] += x;})
+        }
+    }
+
+    // ADD
+    impl<T, const M: usize, const N: usize> Add<&Self> for Mat<T, M, N>
+    where [T; M*N]: Sized,
+        for <'a> T: AddAssign<&'a T> {
+        type Output = Self;
+        fn add(mut self, rhs: &Self) -> Self::Output {
+            self += rhs;
+            self
+        }
+    }
+
+    impl<T, const M: usize, const N: usize> Add for Mat<T, M, N>
+    where [T; M*N]: Sized,
+        for <'a> T: AddAssign<&'a T> {
+        type Output = Self;
+        fn add(self, rhs: Self) -> Self::Output {
+            self + &rhs
+        }
+    }
+
+    impl<T> Mat<T, 3, 3>
+    where T: Default + Add + Mul + Neg<Output=T> + Copy {
+        pub fn cross(x: (T, T, T)) -> Self {
+            let z: T = Default::default();
+            Mat([z, -x.2, x.1,
+                x.2, z, -x.0,
+                -x.1, x.0, z])
+        }
+    }
+
+    impl<T, const M: usize, const N: usize> Mat<MaybeUninit<T>, M, N>
+    where [MaybeUninit<T>; M * N]: Sized {
+        unsafe fn assume_init(self) -> Mat<T, M, N> {
+            Mat(unsafe {
+                // Following line bumps into: https://github.com/rust-lang/rust/issues/61956
+                //mem::transmute::<_, [T; M*N]>(self.0)
+                // This might be the preferred solution anyway:
+                MaybeUninit::array_assume_init(self.0)
+            })
+        }
+
+        fn write(&mut self, index: (usize, usize), t: T) {
+            self[index].write(t);
+        }
+    }
+
+    impl<T: Copy> Mat<T, 2, 1> {
+        pub fn from_tuple(data: (T, T)) -> Self {
+            Mat([data.0, data.1])
+        }
+
+        pub fn to_tuple(self) -> (T, T) {
+            (self.0[0], self.0[1])
+        }
+    }
+
+    impl<T: Copy> Mat<T, 1, 2> {
+        pub fn from_tuple(data: (T, T)) -> Self {
+            Mat([data.0, data.1])
+        }
+
+        pub fn to_tuple(self) -> (T, T) {
+            (self.0[0], self.0[1])
+        }
+    }
+
+
+    impl<T: Copy> Mat<T, 3, 1> {
+        pub fn from_tuple(data: (T, T, T)) -> Self {
+            Mat([data.0, data.1, data.2])
+        }
+
+        pub fn to_tuple(self) -> (T, T, T) {
+            (self.0[0], self.0[1], self.0[2])
+        }
+    }
+
+    impl<T: Copy> Mat<T, 1, 3> {
+        pub fn from_tuple(data: (T, T, T)) -> Self {
+            Mat([data.0, data.1, data.2])
+        }
+
+        pub fn to_tuple(self) -> (T, T, T) {
+            (self.0[0], self.0[1], self.0[2])
+        }
+    }
+
+    impl<T, const M: usize, const N: usize> Index<(usize, usize)> for Mat<T, M, N>
+    where [T; M * N]: Sized {
+        type Output = T;
+        fn index(&self, index: (usize, usize)) -> &Self::Output {
+            &self.0[index.0 * N + index.1]
+        }
+    }
+
+    impl<T, const M: usize, const N: usize> IndexMut<(usize, usize)> for Mat<T, M, N>
+    where [T; M * N]: Sized {
+        fn index_mut(&mut self, index: (usize, usize)) -> &mut Self::Output {
+            &mut self.0[index.0 * N + index.1]
+        }
+    }
+
+    pub fn cross<T>(a: (T, T, T), b: (T, T, T)) -> (T, T, T)
+    where T: Mul<Output=T> + Sub<Output=T> + Copy {
+        (a.1 * b.2 - a.2 * b.1,
+        a.2 * b.0 - a.0 * b.2,
+        a.0 * b.1 - a.1 * b.0)
     }
 }
 
-// ADD
-impl<T, const M: usize, const N: usize> Add<&Self> for Mat<T, M, N>
-where [T; M*N]: Sized,
-      for <'a> T: AddAssign<&'a T> {
-    type Output = Self;
-    fn add(mut self, rhs: &Self) -> Self::Output {
-        self += rhs;
-        self
-    }
-}
-
-impl<T, const M: usize, const N: usize> Add for Mat<T, M, N>
-where [T; M*N]: Sized,
-      for <'a> T: AddAssign<&'a T> {
-    type Output = Self;
-    fn add(self, rhs: Self) -> Self::Output {
-        self + &rhs
-    }
-}
-
-impl<T> Mat<T, 3, 3>
-where T: Default + Add + Mul + Neg<Output=T> + Copy {
-    fn cross(x: (T, T, T)) -> Self {
-        let z: T = Default::default();
-        Mat([z, -x.2, x.1,
-             x.2, z, -x.0,
-             -x.1, x.0, z])
-    }
-}
-
-impl<T, const M: usize, const N: usize> Mat<MaybeUninit<T>, M, N>
-where [MaybeUninit<T>; M * N]: Sized {
-    unsafe fn assume_init(self) -> Mat<T, M, N> {
-        Mat(unsafe {
-            // Following line bumps into: https://github.com/rust-lang/rust/issues/61956
-            //mem::transmute::<_, [T; M*N]>(self.0)
-            // This might be the preferred solution anyway:
-            MaybeUninit::array_assume_init(self.0)
-        })
-    }
-
-    fn write(&mut self, index: (usize, usize), t: T) {
-        self[index].write(t);
-    }
-}
-
-impl<T: Copy> Mat<T, 2, 1> {
-    fn from_tuple(data: (T, T)) -> Self {
-        Mat([data.0, data.1])
-    }
-
-    fn to_tuple(self) -> (T, T) {
-        (self.0[0], self.0[1])
-    }
-}
-
-impl<T: Copy> Mat<T, 1, 2> {
-    fn from_tuple(data: (T, T)) -> Self {
-        Mat([data.0, data.1])
-    }
-
-    fn to_tuple(self) -> (T, T) {
-        (self.0[0], self.0[1])
-    }
-}
-
-
-impl<T: Copy> Mat<T, 3, 1> {
-    fn from_tuple(data: (T, T, T)) -> Self {
-        Mat([data.0, data.1, data.2])
-    }
-
-    fn to_tuple(self) -> (T, T, T) {
-        (self.0[0], self.0[1], self.0[2])
-    }
-}
-
-impl<T: Copy> Mat<T, 1, 3> {
-    fn from_tuple(data: (T, T, T)) -> Self {
-        Mat([data.0, data.1, data.2])
-    }
-
-    fn to_tuple(self) -> (T, T, T) {
-        (self.0[0], self.0[1], self.0[2])
-    }
-}
-
-impl<T, const M: usize, const N: usize> Index<(usize, usize)> for Mat<T, M, N>
-where [T; M * N]: Sized {
-    type Output = T;
-    fn index(&self, index: (usize, usize)) -> &Self::Output {
-        &self.0[index.0 * N + index.1]
-    }
-}
-
-impl<T, const M: usize, const N: usize> IndexMut<(usize, usize)> for Mat<T, M, N>
-where [T; M * N]: Sized {
-    fn index_mut(&mut self, index: (usize, usize)) -> &mut Self::Output {
-        &mut self.0[index.0 * N + index.1]
-    }
-}
-
-fn cross<T>(a: (T, T, T), b: (T, T, T)) -> (T, T, T)
-where T: Mul<Output=T> + Sub<Output=T> + Copy {
-    (a.1 * b.2 - a.2 * b.1,
-     a.2 * b.0 - a.0 * b.2,
-     a.0 * b.1 - a.1 * b.0)
-}
+use mat::{Mat, cross};
 
 fn cubify(face_coords: HashSet<Coord>) -> Edges {
     type V3 = (isize, isize, isize);
