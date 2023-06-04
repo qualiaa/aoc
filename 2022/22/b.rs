@@ -3,11 +3,10 @@
 #![feature(maybe_uninit_array_assume_init)]
 
 use std::collections::{BTreeSet, HashMap, HashSet};
-use std::mem::MaybeUninit;
-use std::ops::{Add, AddAssign, Index, IndexMut, Mul, Neg, Sub, Deref};
+use std::ops::{Add, AddAssign, SubAssign, Mul, MulAssign, Deref};
 use std::rc::Rc;
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct Coord(isize, isize);
 impl Add<Self> for Coord {
     type Output = Self;
@@ -15,6 +14,7 @@ impl Add<Self> for Coord {
         self + &rhs
     }
 }
+
 impl Add<&Self> for Coord {
     type Output = Self;
     fn add(mut self, rhs: &Self) -> <Self as Add<&Self>>::Output {
@@ -45,15 +45,45 @@ impl AddAssign<&Self> for Coord {
         self.1 += rhs.1;
     }
 }
+impl SubAssign<Self> for Coord {
+    fn sub_assign(&mut self, rhs: Self) {
+        *self -= &rhs
+    }
+}
+impl SubAssign<&Self> for Coord {
+    fn sub_assign(&mut self, rhs: &Self) {
+        self.0 -= rhs.0;
+        self.1 -= rhs.1;
+    }
+}
+
+impl Mul<isize> for Coord {
+    type Output = Coord;
+    fn mul(mut self, s: isize) -> Self::Output {
+        self *= s;
+        self
+    }
+}
+
+impl Mul<isize> for &Coord {
+    type Output = Coord;
+    fn mul(self, s: isize) -> Self::Output {
+        let mut new = self.clone();
+        new *= s;
+        new
+    }
+}
+
+impl MulAssign<isize> for Coord {
+    fn mul_assign(&mut self, s: isize) {
+        self.0 *= s;
+        self.1 *= s;
+    }
+}
 
 enum Tile {
     Wall,
     Empty
-}
-
-struct Map {
-    map: HashMap<Coord, Tile>,
-    max: Coord,
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
@@ -63,6 +93,7 @@ use Direction::*;
 #[derive(Copy, Clone)]
 enum Rotation {CCW = -1, CW = 1}
 
+#[derive(Clone)]
 enum Instruction {
     Turn(Rotation),
     Move(usize)
@@ -80,8 +111,8 @@ impl Coord {
         }
     }
 
-    fn neighbours<'a>(&'a self) -> impl Iterator<Item=Coord> + 'a {
-        Direction::DIRECTIONS.iter().map(Coord::from_direction).map(move |d| self + d)
+    fn elementwise_max(&self, other: &Coord) -> Coord {
+        Coord(self.0.max(other.0), self.1.max(other.1))
     }
 
     fn to_tuple(&self) -> (isize, isize) {
@@ -95,90 +126,126 @@ fn modulo(x: isize, y: isize) -> isize {
 }
 
 impl Direction {
-    fn rotate(&self, rot: Rotation) -> Direction {
-        let rot = modulo(rot as isize, *self as isize) as usize;
-        Direction::DIRECTIONS[Direction::DIRECTIONS.len() - rot]
+    fn rotate(self, rot: Rotation) -> Direction {
+        Direction::DIRECTIONS[modulo(rot as isize + self as isize, 4) as usize]
     }
 
-    const DIRECTIONS: [Direction; 4] = [East, North, West, South]; // order matters
+    fn opposite(self) -> Direction {
+        Direction::DIRECTIONS[modulo(self as isize + 2, 4) as usize]
+    }
+
+    fn cw_rotations_to(self, other: Direction) -> usize {
+        modulo(other as isize - self as isize, 4) as usize
+    }
+
+    const DIRECTIONS: [Direction; 4] = [East, South, West, North]; // order matters
 }
 
 impl Instruction {
-    fn execute(self, pose: Pose, map: &Map) -> Pose {
+    fn execute(self, mut pose: Pose, map: &Map) -> Pose {
         use Instruction::*;
-        let (mut position, direction) = pose;
         match self {
-            Turn(rotation) => (position, direction.rotate(rotation)),
+            Turn(rotation) => (pose.0, pose.1.rotate(rotation)),
 
             Move(n) => {
                 for _ in 0..n {
-                    if let Some(new_position) = map.next(position.clone(), direction) {
-                        position = new_position;
+                    if let Some(new_pose) = map.next(pose.clone()) {
+                        pose = new_pose;
                     } else {
                         break;
                     }
                 }
-                (position, direction)
+                pose
             }
         }
+    }
+
+    fn execute_all(instructions: impl Iterator<Item=Instruction>, map: &Map) -> Pose {
+        instructions.fold(map.initial_pose(), |p, i| i.execute(p, &map))
     }
 }
 
 type Pose = (Coord, Direction);
 type CharGrid = Vec<Vec<char>>;
+type Face = HashMap<Coord, Tile>;
+type Edges = HashMap<(Coord, Direction), (Coord, Direction)>;
 
+struct Map {
+    faces: HashMap<Coord, Face>,
+    edges: Edges,
+    face_size: usize
+}
 
 impl Map {
-    fn new(map: HashMap<Coord, Tile>) -> Self {
-        let max = map.keys().fold(Coord::MIN, |c0, c1| c0.max(c1.clone())); // clone here from derived Ord, should fix it but I've suffered enough
-        Map { map, max }
+    fn new(faces: HashMap<Coord, Face>, edges: Edges, face_size: usize) -> Self {
+        Map { faces, edges, face_size }
     }
 
-    fn from_lines(lines: impl Iterator<Item=String>) -> Self {
-        use Tile::*;
-
-        Map::new(lines.enumerate().flat_map(|(y, l)| {
-            l.chars().enumerate().filter_map(move |(x, c)| {
-                match c {
-                    '#' => Some(Wall),
-                    '.' => Some(Empty),
-                    _ => None
-                }.map(|t| (Coord(x as isize, y as isize), t))
-            }).collect::<Vec<(Coord, Tile)>>()
-        }).collect())
+    fn get(&self, face_coord: &Coord, local_coord: &Coord) -> &Tile {
+        self.faces[face_coord].get(local_coord).unwrap()
     }
 
     fn initial_pose(&self) -> Pose {
-        let start_point: &Coord = self.map.keys().filter(|Coord(_, y)| *y == 0).min_by_key(|Coord(x, _)| x).unwrap();
-        (start_point.clone(), East)
+        let start_point: &Coord = self.faces.keys()
+            .filter(|Coord(_, y)| *y == 0)
+            .min_by_key(|Coord(x, _)| x).unwrap();
+        // FIXME: This doesn't work if there is a wall in the top left
+        (start_point * self.face_size as isize, East)
     }
 
-    fn next(&self, mut position: Coord, direction: Direction) -> Option<Coord> {
+    fn next(&self, pose: Pose) -> Option<Pose> {
         use Tile::*;
-        position += Coord::from_direction(&direction);
-        if !self.map.contains_key(&position) {
-            position = self.wrap(position, direction);
+
+        let (mut face_coord, mut pose) = self.to_face(pose);
+        let face = self.faces.get(&face_coord).unwrap();
+
+        pose.0 += Coord::from_direction(&pose.1);
+        if !face.contains_key(&pose.0) {
+            (face_coord, pose) = self.next_face(face_coord, pose);
         }
-        match self.map[&position] {
-            Empty => Some(position),
+        match self.get(&face_coord, &pose.0) {
+            Empty => Some(self.from_face(face_coord, pose)),
             Wall => None
         }
     }
 
-    fn wrap(&self, point: Coord, direction: Direction) -> Coord {
-        let mut point = match direction {
-            North => Coord(point.0, self.max.1),
-            East => Coord(0, point.1),
-            South => Coord(point.0, 0),
-            West => Coord(self.max.0, point.1)
+    fn next_face(&self, face_coord: Coord, pose: Pose) -> (Coord, Pose) {
+        let (mut local_coord, old_dir) = pose;
+        let (new_face_coord, new_dir) = &self.edges[&(face_coord, old_dir)];
+
+        let new_dir = new_dir.opposite();
+
+        local_coord = self.wrap(local_coord);
+        local_coord = match old_dir.cw_rotations_to(new_dir) {
+            0 => local_coord,
+            1 => Coord(self.face_size as isize - 1 - local_coord.1, local_coord.0),
+            3 => Coord(local_coord.1, self.face_size as isize - 1 - local_coord.0),
+            2 => Coord(self.face_size as isize - 1 - local_coord.0,
+                       self.face_size as isize - 1 - local_coord.1),
+            _ => panic!("unpossible")
         };
-        while !self.map.contains_key(&point) {
-            point += Coord::from_direction(&direction);
-        }
-        point
+
+        (new_face_coord.clone(), (local_coord, new_dir))
+    }
+
+    fn wrap(&self, mut local_coord: Coord) -> Coord {
+        local_coord.0 = modulo(local_coord.0, self.face_size as isize);
+        local_coord.1 = modulo(local_coord.1, self.face_size as isize);
+        local_coord
+    }
+
+    fn to_face(&self, mut pose: Pose) -> (Coord, Pose) {
+        let face_coord = Coord(pose.0.0 / self.face_size as isize,
+                               pose.0.1 / self.face_size as isize);
+        pose.0 = self.wrap(pose.0);
+        (face_coord, pose)
+    }
+
+    fn from_face(&self, face_coord: Coord, mut pose: Pose) -> Pose {
+        pose.0 += face_coord * self.face_size as isize;
+        pose
     }
 }
-
 
 fn parse_instructions(mut s: &str) -> Vec<Instruction> {
     use Instruction::*;
@@ -209,19 +276,40 @@ fn lines_to_char_grid(lines: impl IntoIterator<Item=String>) -> CharGrid {
     lines.into_iter().map(|l| l.chars().collect()).collect()
 }
 
-fn find_faces(map: CharGrid, tile_size: usize) -> HashSet<Coord> {
-    let (width, height) = (map.iter().map(Vec::len).max().unwrap(), map.len());
+fn get_face(map: &CharGrid, face_coord: &Coord, face_size: usize) -> Face {
+    use Tile::*;
 
-    let mut h = HashSet::new();
-    for y in 0..height / tile_size {
-        for x in 0..width / tile_size {
-            match map[y * tile_size].get(x * tile_size) {
-                Some(&c) if c != ' ' => h.insert(Coord(x as isize, y as isize)),
-                _ => continue,
-            };
+    let face_size = face_size as isize;
+    let mut tiles = HashMap::new();
+
+    for x in 0..face_size {
+        for y in 0..face_size {
+            let local_coord = Coord(x, y);
+            let global_coord = &local_coord + face_coord * face_size as isize;
+            let c = map[global_coord.1 as usize][global_coord.0 as usize];
+            tiles.insert(local_coord, match c {
+                '#' => Wall,
+                '.' => Empty,
+                _ => panic!("no valid character at {}, {} in face {:?}", x, y, face_coord)});
         }
     }
-    h
+    tiles
+}
+
+fn find_faces(map: CharGrid, face_size: usize) -> HashMap<Coord, Face> {
+    let (width, height) = (map.iter().map(Vec::len).max().unwrap(), map.len());
+
+    let mut faces = HashMap::new();
+    for y in 0..height / face_size {
+        for x in 0..width / face_size {
+            if let Some(&c) = map[y * face_size].get(x * face_size) && c != ' ' {
+                let face_coord = Coord(x as isize, y as isize);
+                let face = get_face(&map, &face_coord, face_size);
+                faces.insert(face_coord, face);
+            }
+        }
+    }
+    faces
 }
 
 struct Mat<T, const M: usize, const N: usize> ([T; M * N]) where [T; M * N]: Sized;
@@ -467,7 +555,7 @@ where T: Mul<Output=T> + Sub<Output=T> + Copy {
      a.0 * b.1 - a.1 * b.0)
 }
 
-fn cubify(face_coords: HashSet<Coord>) -> HashMap<(Coord, Direction), (Coord, Direction)> {
+fn cubify(face_coords: HashSet<Coord>) -> Edges {
     type V3 = (isize, isize, isize);
     let first_face = face_coords.iter().next().unwrap();
     let mut frontier: BTreeSet<&Coord> = BTreeSet::from([first_face]);
@@ -475,8 +563,8 @@ fn cubify(face_coords: HashSet<Coord>) -> HashMap<(Coord, Direction), (Coord, Di
         (first_face, (0, 0, 1))
     ]);
     let mut bases: HashMap<&Coord, Rc<Mat<isize, 2, 3>>> = HashMap::from([
-        (first_face, Rc::new(Mat([1, 0, 0,
-                                  0, 1, 0])))
+        (first_face, Rc::new(Mat::new([1, 0, 0,
+                                       0, 1, 0])))
     ]);
 
     let mut adjacent_normals: HashMap<&Coord, HashMap<Direction, V3>> = HashMap::new();
@@ -506,7 +594,7 @@ fn cubify(face_coords: HashSet<Coord>) -> HashMap<(Coord, Direction), (Coord, Di
                 let new_basis = basis.deref() * (i + &a*&a + a).transpose();
                 bases.insert(new_face, Rc::new(new_basis));
                 normals.insert(new_face, delta3d);
-                frontier.insert(&new_face);
+                frontier.insert(new_face);
             }
         }
     }
@@ -518,7 +606,7 @@ fn cubify(face_coords: HashSet<Coord>) -> HashMap<(Coord, Direction), (Coord, Di
         }).collect();
     let faces: HashMap<V3, &Coord> = normals.iter().map(|(k, v)| (*v, *k)).collect();
 
-    let mut resolved_edges: HashMap<(Coord, Direction), (Coord, Direction)> = HashMap::new();
+    let mut resolved_edges: Edges = HashMap::new();
     for (face_a, dirs) in adjacent_normals.into_iter() {
         let normal_a = normals[face_a];
         for (dir_a, normal_b) in dirs.into_iter() {
@@ -530,14 +618,47 @@ fn cubify(face_coords: HashSet<Coord>) -> HashMap<(Coord, Direction), (Coord, Di
     resolved_edges
 }
 
+fn wrap_edges(face_coords: HashSet<Coord>) -> Edges {
+    let mut resolved_edges: Edges = HashMap::new();
+
+    let max = face_coords.iter().fold(Coord::MIN, |c0, c1| c0.elementwise_max(c1));
+
+    for fc in face_coords.iter() {
+        for &direction in Direction::DIRECTIONS.iter() {
+            let delta = Coord::from_direction(&direction);
+            let mut neighbour = fc + &delta;
+            if !face_coords.contains(&neighbour) {
+                neighbour = match direction {
+                    North => Coord(fc.0, max.1),
+                    East => Coord(0, fc.1),
+                    South => Coord(fc.0, 0),
+                    West => Coord(max.0, fc.1),
+                };
+                while !face_coords.contains(&neighbour) {
+                    neighbour += &delta;
+                }
+            }
+            resolved_edges.insert((fc.clone(), direction),
+                                  (neighbour, direction.opposite()));
+        }
+    }
+    resolved_edges
+}
+
 fn main() {
+    let face_size = 50;
+
     let mut lines: Vec<String> = std::io::stdin().lines().flat_map(|l| l).collect();
     let instructions = parse_instructions(&lines.pop().unwrap());
     let char_grid = lines_to_char_grid(lines);
-    let face_coords = find_faces(char_grid, 4);
-    println!("{:?}", face_coords);
-    //let map = Map::from_lines(lines.into_iter());
+    let faces = find_faces(char_grid, face_size);
 
-    //let final_pose = instructions.into_iter().fold(map.initial_pose(), |p, i| i.execute(p, &map));
-    //println!("{}", password(final_pose));
+    let edges = wrap_edges(faces.keys().cloned().collect());
+    let mut map = Map::new(faces, edges, face_size);
+    println!("{}", password(
+        Instruction::execute_all(instructions.iter().cloned(), &map)));
+
+    map.edges = cubify(map.faces.keys().cloned().collect());
+    println!("{}", password(
+        Instruction::execute_all(instructions.into_iter(), &map)));
 }
