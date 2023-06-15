@@ -2,7 +2,7 @@
 #![feature(impl_trait_projections)]
 #![feature(result_option_inspect)]
 
-use std::collections::{BinaryHeap, HashMap, HashSet};
+use std::collections::{BinaryHeap, HashMap};
 use std::cmp::{Ordering, PartialOrd, Ord, Reverse};
 use std::error::Error;
 use std::ops::{Add, Mul, MulAssign, Sub, AddAssign, SubAssign};
@@ -20,9 +20,9 @@ enum Material {Ore, Clay, Obsidian, Geode}
 use Material::*;
 
 impl Material {
-    fn iter() -> impl Iterator<Item=Self> {
+    fn iter() -> impl Iterator<Item=&'static Self> {
         static VALUES: [Material; 4] = [Ore, Clay, Obsidian, Geode];
-        VALUES.iter().copied()
+        VALUES.iter()
     }
 }
 
@@ -229,24 +229,24 @@ impl Blueprint {
         let mut best_min = 0;
 
         while let Some(node) = frontier.pop() {
-            let moves = node.state.moves();
-
-            if moves.is_empty() {
-                best = best.max(node.state.final_geodes())
-            }
-
-            for (_, branch) in moves {
+            let mut had_moves = false;
+            for branch in node.state.moves() {
+                had_moves = true;
                 let max = branch.upper_bound();
-                if max < best_min || max < best{ continue }
+                if max < best_min { continue }
 
-                let node = Node::new(branch.lower_bound(), max, branch);
-                best_min = best_min.max(node.min);
+                let branch = Node::new(branch.lower_bound(), max, branch);
+                best_min = best_min.max(branch.min);
 
                 if node.min == node.max {
-                    best = best.max(node.min)
-                } else if node.max > 0 {
-                    frontier.push(node);
+                    best = best.max(branch.min);
+                } else {
+                    frontier.push(branch);
                 }
+            }
+
+            if !had_moves {
+                best = best.max(node.state.final_geodes());
             }
         }
         best
@@ -291,8 +291,8 @@ impl State<'_> {
         State::new(blueprint, Stockpile::initial(), Production::initial(), 0, end_time)
     }
 
-    fn moves(&self) -> Vec<(Material, Self)> {
-        Material::iter().filter_map(|m| self.build_next(m).map(|s| (m, s))).collect()
+    fn moves<'a>(&'a self) -> impl Iterator<Item=Self> + 'a {
+        Material::iter().filter_map(move |m| self.build_next(*m))
     }
 
     fn final_geodes(self) -> usize {
@@ -317,8 +317,12 @@ impl State<'_> {
         // and time will be None.
         // We also can't exceed end_time, and building a robot in the last time
         // step is pointless.
+        if self.stockpile.can_afford(&recipe) && self.time + 1 < self.end_time {
+            return Some(1)
+        }
+
         let mut time = 0;
-        for m in Material::iter() {
+        for &m in Material::iter() {
             let n = recipe.cost(m);
             if n == 0 { continue }
 
@@ -326,13 +330,9 @@ impl State<'_> {
             if dn == 0 { return None }
             let n = n.saturating_sub(self.stockpile.amount(m)) as isize;
 
-            if n == 0 {
-                time = time.max(1)
-            } else {
-                // +2 here: +1 for time step *after* satisfying need
-                //          +1 to correct pre-division -1
-                time = time.max((2 + (n - 1) / dn as isize) as usize)
-            }
+            // +2 here: +1 for time step *after* satisfying need
+            //          +1 to correct pre-division -1
+            time = time.max((2 + (n - 1) / dn as isize) as usize)
         }
         maybe(self.time + time < self.end_time, time)
     }
@@ -353,44 +353,45 @@ impl State<'_> {
     }
 
     fn lower_bound(&self) -> usize {
-        // Our lower bound is the path of only building geode robots from now on.
-        // This is a bit wasteful as we may also search this branch
-        // - but I can't be bothered to populate visited states
-        std::iter::successors(Some(self.clone()), |state: &Self| state.build_next(Geode))
-            .last()
-            .map(|state| state.final_geodes())
-            .unwrap_or(0)
+        // Previously I computed a better lower bound here, but the best
+        // ordering I found makes the minimum bound ~irrelevant, so it's
+        // better to just do something cheap.
+        self.stockpile.0.geode as usize + (self.end_time-self.time) * self.production.0.geode as usize
     }
 
     fn upper_bound(&self) -> usize {
         // To calculate an upper bound on geode production, we solve a branchless
-        // subproblem in which ore costs are 0 and we can create one robot of any
-        // type each minute.
+        // subproblem in which each robot costs only one thing and we can create
+        // one robot of any type each minute.
 
-        let bp = self.blueprint.easy();
-        let obsidian_cost = bp.recipe(Obsidian).cost(Clay);
-        let geode_cost = bp.recipe(Geode).cost(Obsidian);
+        let ore_cost = self.blueprint.recipe(Clay).cost(Ore);
+        let clay_cost = self.blueprint.recipe(Obsidian).cost(Clay);
+        let obsidian_cost = self.blueprint.recipe(Geode).cost(Obsidian);
         let mut stockpile = self.stockpile.clone();
         let mut production = self.production.clone();
 
         for _ in self.time..=self.end_time {
             // find robots you can build
-            let obsidian = stockpile.0.clay > obsidian_cost as isize;
-            let geode = stockpile.0.obsidian > geode_cost as isize;
+            let clay = stockpile.0.ore > ore_cost as isize;
+            let obsidian = stockpile.0.clay > clay_cost as isize;
+            let geode = stockpile.0.obsidian > obsidian_cost as isize;
 
             // collect resources from built robots
             stockpile = stockpile.accumulate(&production, 1);
 
             // build robots
+            if clay {
+                stockpile.0.ore -= ore_cost as isize;
+                production.0.clay += 1;
+            }
             if obsidian {
-                stockpile.0.clay -= obsidian_cost as isize;
+                stockpile.0.clay -= clay_cost as isize;
                 production.0.obsidian += 1;
             }
             if geode {
-                stockpile.0.obsidian -= geode_cost as isize;
+                stockpile.0.obsidian -= obsidian_cost as isize;
                 production.0.geode += 1;
             }
-            production.0.clay += 1
         }
         stockpile.amount(Geode)
     }
